@@ -1,0 +1,17 @@
+{
+	"dependencies": {},
+	"devDependencies": {
+		"@eslint/js": "^9.21.0",
+		"@types/bun": "^1.2.4",
+		"eslint": "^9.21.0",
+		"typescript-eslint": "^8.26.0"
+	},
+	"name": "lisp-interpreter",
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"scripts": {
+		"start": "bun run src/main.ts"
+	},
+	"type": "module"
+}
