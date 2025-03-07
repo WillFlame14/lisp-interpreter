@@ -17,7 +17,7 @@ function runFile(path: string) {
 	console.log(`Interpreting file ${path}`);
 
 	const source = fs.readFileSync(path, 'utf8');
-	run(source);	
+	run(source);
 }
 
 function prompt() {
