@@ -21,11 +21,25 @@ import { Token } from './token.ts';
 
 type Expr = LiteralExpr | ListExpr | OpExpr | IfExpr | LetExpr | LoopExpr | FnExpr
 
+export interface ExprVisitor<T> {
+	visitLiteral: (expr: LiteralExpr) => T
+	visitList: (expr: ListExpr) => T
+	visitOp: (expr: OpExpr) => T
+	visitIf: (expr: IfExpr) => T
+	visitLet: (expr: LetExpr) => T
+	visitLoop: (expr: LoopExpr) => T
+	visitFn: (expr: FnExpr) => T
+}
+
 export class LiteralExpr {
 	value: unknown;
 
 	constructor(value: unknown) {
 		this.value = value;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitLiteral(this);
 	}
 }
 
@@ -34,6 +48,10 @@ export class ListExpr {
 
 	constructor(children: Expr[]) {
 		this.children = children;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitList(this);
 	}
 }
 
@@ -45,6 +63,10 @@ export class OpExpr {
 		this.op = op;
 		this.children = children;
 	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitOp(this);
+	}
 }
 
 export class IfExpr {
@@ -54,6 +76,10 @@ export class IfExpr {
 	constructor(true_child: Expr, false_child: Expr) {
 		this.true_child = true_child;
 		this.false_child = false_child;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitIf(this);
 	}
 }
 
@@ -65,6 +91,10 @@ export class LetExpr {
 		this.bindings = bindings;
 		this.body = body;
 	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitLet(this);
+	}
 }
 
 export class LoopExpr {
@@ -74,6 +104,10 @@ export class LoopExpr {
 	constructor(bindings: ListExpr, body: Expr) {
 		this.bindings = bindings;
 		this.body = body;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitLoop(this);
 	}
 }
 
@@ -85,5 +119,9 @@ export class FnExpr {
 	constructor(bindings: ListExpr, body: Expr) {
 		this.bindings = bindings;
 		this.body = body;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitFn(this);
 	}
 }
