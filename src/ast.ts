@@ -1,8 +1,9 @@
-import { ExprVisitor, LiteralExpr, ListExpr, OpExpr, IfExpr, LetExpr, LoopExpr, FnExpr } from './expr.ts';
+import { ExprVisitor, LiteralExpr, NameExpr, ListExpr, OpExpr, IfExpr, LetExpr, LoopExpr, FnExpr } from './expr.ts';
 
-const astPrinter: ExprVisitor<string> = {
-	visitLiteral: (expr: LiteralExpr) =>
-		`${expr.value}`,
+export const astPrinter: ExprVisitor<string> = {
+	visitLiteral: (expr: LiteralExpr) => `${expr.value}`,
+
+	visitName: (expr: NameExpr) => expr.name,
 
 	visitList: (expr: ListExpr) =>
 		`(${expr.children.map(c => c.accept(astPrinter)).join(' ')})`,

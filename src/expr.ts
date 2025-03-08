@@ -8,7 +8,6 @@ import { Token } from './token.ts';
  * 
  * literal: string | number | 'true' | 'false' | 'nil'
  * list: '(' expr* ')'
- * vector: '[' expr* ']'
  * 
  * op_expr: op expr+
  * if_expr: 'if' expr expr
@@ -19,10 +18,11 @@ import { Token } from './token.ts';
  * expr: literal | list | '(' op_expr | if_expr | let_expr | loop_expr | fn_expr ')'
  */
 
-type Expr = LiteralExpr | ListExpr | OpExpr | IfExpr | LetExpr | LoopExpr | FnExpr
+export type Expr = LiteralExpr | NameExpr | ListExpr | OpExpr | IfExpr | LetExpr | LoopExpr | FnExpr
 
 export interface ExprVisitor<T> {
 	visitLiteral: (expr: LiteralExpr) => T
+	visitName: (expr: NameExpr) => T,
 	visitList: (expr: ListExpr) => T
 	visitOp: (expr: OpExpr) => T
 	visitIf: (expr: IfExpr) => T
@@ -40,6 +40,18 @@ export class LiteralExpr {
 
 	accept<T>(visitor: ExprVisitor<T>) {
 		return visitor.visitLiteral(this);
+	}
+}
+
+export class NameExpr {
+	name: string;
+
+	constructor(name: string) {
+		this.name = name;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitName(this);
 	}
 }
 

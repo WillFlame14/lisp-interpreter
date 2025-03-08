@@ -1,15 +1,15 @@
 export enum TokenType {
 	// characters
-	L_PAREN, R_PAREN, L_SQUARE, R_SQUARE,
+	L_PAREN = 'L_PAREN', R_PAREN = 'R_PAREN', L_SQUARE = 'L_SQUARE', R_SQUARE = 'R_SQUARE',
 
 	// operators
-	PLUS, MINUS, STAR, SLASH, EQ, GT, LT, AND, OR, NOT,
+	PLUS = 'PLUS', MINUS = 'MINUS', STAR = 'STAR', SLASH = 'SLASH', EQ = 'EQ', GT = 'GT', LT = 'LT', AND = 'AND', OR = 'OR', NOT = 'NOT',
 
 	// literals
-	IDENTIFIER, STRING, NUMBER, TRUE, FALSE, NIL,
+	IDENTIFIER = 'IDENTIFIER', STRING = 'STRING', NUMBER = 'NUMBER', TRUE = 'TRUE', FALSE = 'FALSE', NIL = 'NIL',
 
 	// keywords
-	IF, FN, LET, LOOP
+	IF = 'IF', FN = 'FN', LET = 'LET', LOOP = 'LOOP'
 }
 
 export interface Token {

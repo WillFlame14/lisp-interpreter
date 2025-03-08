@@ -3,6 +3,8 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import { scanTokens } from './scanner.ts';
+import { parse_expr } from './parser.ts';
+import { astPrinter } from './ast.ts';
 
 let hadError = false;
 
@@ -36,8 +38,9 @@ function prompt() {
 function run(source: string) {
 	const tokens = scanTokens(source);
 
-	for (const token of tokens)
-		console.log(token);
+	const { expr } = parse_expr(tokens);
+
+	console.log(expr.accept(astPrinter));
 }
 
 export function error(line: number, message: string) {
