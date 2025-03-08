@@ -4,6 +4,8 @@ import { Token, TokenType } from './token.ts';
 const charTokenMap = {
 	'(': TokenType.L_PAREN,
 	')': TokenType.R_PAREN,
+	'[': TokenType.L_SQUARE,
+	']': TokenType.R_SQUARE,
 	'+': TokenType.PLUS,
 	'-': TokenType.MINUS,
 	'*': TokenType.STAR,
@@ -14,12 +16,16 @@ const charTokenMap = {
 } as const;
 
 const keywordMap = {
-	if: TokenType.IF,
 	true: TokenType.TRUE,
 	false: TokenType.FALSE,
-	fn: TokenType.FN,
 	nil: TokenType.NIL,
-	print: TokenType.PRINT
+	and: TokenType.AND,
+	or: TokenType.OR,
+	not: TokenType.NOT,
+	if: TokenType.IF,
+	fn: TokenType.FN,
+	let: TokenType.LET,
+	loop: TokenType.LOOP
 } as const;
 
 export function scanTokens(source: string) {
