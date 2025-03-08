@@ -4,6 +4,8 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { scanTokens } from './scanner.ts';
 
+let hadError = false;
+
 function main() {
 	const args = process.argv.slice(2);
 
@@ -18,6 +20,9 @@ function runFile(path: string) {
 
 	const source = fs.readFileSync(path, 'utf8');
 	run(source);
+
+	if (hadError)
+		process.exit(65);
 }
 
 function prompt() {
@@ -25,6 +30,7 @@ function prompt() {
 
 	const rl = readline.createInterface({ input, output });
 	rl.on('line', run);
+	hadError = false;
 }
 
 function run(source: string) {
@@ -32,6 +38,15 @@ function run(source: string) {
 
 	for (const token of tokens)
 		console.log(token);
+}
+
+export function error(line: number, message: string) {
+	report(line, '', message);
+}
+
+function report(line: number, where: string, message: string) {
+	console.log(`[line ${line}] Error${where}: ${message}`);
+	hadError = true;
 }
 
 main();

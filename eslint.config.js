@@ -19,11 +19,12 @@ export default tseslint.config(
 		},
 		rules: {
 			'indent': ['error', 'tab', { SwitchCase: 1, ignoredNodes: ['ConditionalExpression'] }],
-			'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+			'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
 			'semi': 'error',
 			'eol-last': 'warn',
 			'no-trailing-spaces': ['warn', { ignoreComments: true }],
-			'prefer-const': 'warn'
+			'prefer-const': 'warn',
+			'@typescript-eslint/restrict-template-expressions': 'off'
 		}
 	}
 );
