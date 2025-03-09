@@ -6,5 +6,6 @@
 		"resolveJsonModule": true,
 		"allowImportingTsExtensions": true,
 		"strict": true
-	}
+	},
+	"includes:": ["test/**/*.ts"]
 }

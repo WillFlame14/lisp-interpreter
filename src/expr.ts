@@ -3,32 +3,35 @@ import { Token } from './token.ts';
 /**
  * string: '"' [\x00-\x7F]* '"'
  * number: ([0-9.])*
- * op: '+' | '-' | '*' | '/' | '=' | '<' | '>' | 'and' | 'or' | 'not'
- * identifier: [A-z_][A-z0-9-_!?]*
+ * identifier: [a-zA-Z_+-/*=<>!&?][a-zA-Z0-9_+-/*=<>!&?]*
  * 
  * literal: string | number | 'true' | 'false' | 'nil'
  * list: '(' expr* ')'
  * 
- * op_expr: op expr+
- * if_expr: 'if' expr expr
- * let_expr: 'let' list expr
- * loop_expr: 'loop' list expr
- * fn_expr: 'fn' identifier? list expr
+ * bindings: '[' (identifier expr)* ']'
+ * params: '[' identifier* ']'
  * 
- * expr: literal | list | '(' op_expr | if_expr | let_expr | loop_expr | fn_expr ')'
+ * if_expr:  'if' expr expr expr
+ * let_expr: 'let' bindings expr
+ * loop_expr: 'loop' bindings expr
+ * fn_expr: 'fn' identifier? params expr
+ * 
+ * special_form: '(' if_expr | let_expr | loop_expr | fn_expr ')'
+ * expr: literal | identifier | list | special_form
  */
 
-export type Expr = LiteralExpr | NameExpr | ListExpr | OpExpr | IfExpr | LetExpr | LoopExpr | FnExpr
+export type Expr = LiteralExpr | NameExpr | ListExpr | IfExpr | LetExpr | LoopExpr | FnExpr
+export type Binding = { key: Token, value: Expr };
 
 export interface ExprVisitor<T> {
-	visitLiteral: (expr: LiteralExpr) => T
-	visitName: (expr: NameExpr) => T,
-	visitList: (expr: ListExpr) => T
-	visitOp: (expr: OpExpr) => T
-	visitIf: (expr: IfExpr) => T
-	visitLet: (expr: LetExpr) => T
-	visitLoop: (expr: LoopExpr) => T
-	visitFn: (expr: FnExpr) => T
+	visitLiteral: (expr: LiteralExpr) => T;
+	visitName: (expr: NameExpr) => T;
+	visitList: (expr: ListExpr) => T;
+	// visitOp: (expr: OpExpr) => T;
+	visitIf: (expr: IfExpr) => T;
+	visitLet: (expr: LetExpr) => T;
+	visitLoop: (expr: LoopExpr) => T;
+	visitFn: (expr: FnExpr) => T;
 }
 
 export class LiteralExpr {
@@ -67,6 +70,7 @@ export class ListExpr {
 	}
 }
 
+/*
 export class OpExpr {
 	op: Token;
 	children: Expr[];
@@ -79,13 +83,15 @@ export class OpExpr {
 	accept<T>(visitor: ExprVisitor<T>) {
 		return visitor.visitOp(this);
 	}
-}
+}*/
 
 export class IfExpr {
+	cond: Expr;
 	true_child: Expr;
 	false_child: Expr;
 
-	constructor(true_child: Expr, false_child: Expr) {
+	constructor(cond: Expr, true_child: Expr, false_child: Expr) {
+		this.cond = cond;
 		this.true_child = true_child;
 		this.false_child = false_child;
 	}
@@ -96,10 +102,10 @@ export class IfExpr {
 }
 
 export class LetExpr {
-	bindings: ListExpr;
+	bindings: Binding[];
 	body: Expr;
 
-	constructor(bindings: ListExpr, body: Expr) {
+	constructor(bindings: Binding[], body: Expr) {
 		this.bindings = bindings;
 		this.body = body;
 	}
@@ -110,10 +116,10 @@ export class LetExpr {
 }
 
 export class LoopExpr {
-	bindings: ListExpr;
+	bindings: Binding[];
 	body: Expr;
 
-	constructor(bindings: ListExpr, body: Expr) {
+	constructor(bindings: Binding[], body: Expr) {
 		this.bindings = bindings;
 		this.body = body;
 	}
@@ -125,11 +131,11 @@ export class LoopExpr {
 
 export class FnExpr {
 	name?: Token;
-	bindings: ListExpr;
+	params: Token[];
 	body: Expr;
 
-	constructor(bindings: ListExpr, body: Expr) {
-		this.bindings = bindings;
+	constructor(params: Token[], body: Expr) {
+		this.params = params;
 		this.body = body;
 	}
 

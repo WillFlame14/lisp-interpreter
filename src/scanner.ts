@@ -6,22 +6,22 @@ const charTokenMap = {
 	')': TokenType.R_PAREN,
 	'[': TokenType.L_SQUARE,
 	']': TokenType.R_SQUARE,
-	'+': TokenType.PLUS,
-	'-': TokenType.MINUS,
-	'*': TokenType.STAR,
-	'/': TokenType.SLASH,
-	'=': TokenType.EQ,
-	'>': TokenType.GT,
-	'<': TokenType.LT
+	// '+': TokenType.PLUS,
+	// '-': TokenType.MINUS,
+	// '*': TokenType.STAR,
+	// '/': TokenType.SLASH,
+	// '=': TokenType.EQ,
+	// '>': TokenType.GT,
+	// '<': TokenType.LT
 } as const;
 
 const keywordMap = {
 	true: TokenType.TRUE,
 	false: TokenType.FALSE,
 	nil: TokenType.NIL,
-	and: TokenType.AND,
-	or: TokenType.OR,
-	not: TokenType.NOT,
+	// and: TokenType.AND,
+	// or: TokenType.OR,
+	// not: TokenType.NOT,
 	if: TokenType.IF,
 	fn: TokenType.FN,
 	let: TokenType.LET,
@@ -60,8 +60,11 @@ export function scanTokens(source: string) {
 				if (current === source.length)
 					error(line, 'Unterminated string.');
 
+				// Consume the closing quote
+				current++;
+
 				// Remove the quotes from the literal.
-				addToken(TokenType.STRING, source.substring(start + 1, current - 1));
+				addToken(TokenType.STRING, source.substring(start + 1, current - 2));
 				break;
 			case ' ':
 			case '\r':
@@ -81,9 +84,9 @@ export function scanTokens(source: string) {
 					break;
 				}
 
-				if (/[A-z-_!?]/.test(char)) {
+				if (/[a-zA-Z_+-/*=<>!&?]/.test(char)) {
 					// Scan identifier
-					while (/[A-z-_!?]/.test(source.charAt(current)) && current < source.length) {
+					while (/[a-zA-Z0-9_+\-*/=<>!&?]/.test(source.charAt(current)) && current < source.length) {
 						current++;
 					}
 
