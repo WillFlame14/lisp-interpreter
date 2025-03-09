@@ -107,5 +107,6 @@ export function scanTokens(source: string) {
 		start = current;
 	}
 
+	tokens.push({ type: TokenType.EOF, lexeme: '', literal: undefined, line });
 	return tokens;
 }

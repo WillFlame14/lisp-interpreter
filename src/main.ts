@@ -3,7 +3,7 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import { scanTokens } from './scanner.ts';
-import { parse_expr } from './parser.ts';
+import { parse } from './parser.ts';
 import { astPrinter } from './ast.ts';
 
 let hadError = false;
@@ -37,17 +37,19 @@ function prompt() {
 
 function run(source: string) {
 	const tokens = scanTokens(source);
+	const program = parse(tokens);
 
-	const { expr } = parse_expr(tokens);
+	if (hadError)
+		return;
 
-	console.log(expr.accept(astPrinter));
+	console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 }
 
 export function error(line: number, message: string) {
 	report(line, '', message);
 }
 
-function report(line: number, where: string, message: string) {
+export function report(line: number, where: string, message: string) {
 	console.log(`[line ${line}] Error${where}: ${message}`);
 	hadError = true;
 }

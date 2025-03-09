@@ -1,79 +1,213 @@
-import { Expr, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr } from './expr.ts';
+import { report } from './main.ts';
+import { Expr, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, Binding } from './expr.ts';
 import { Token, TokenType } from './token.ts';
 
-export function parse_literal(tokens: Token[]) {
-	const token = tokens[0];
+class ParseError extends Error {}
 
-	const expr = (() => {
+function error(token: Token, message: string) {
+	if (token.type === TokenType.EOF)
+		report(token.line, ` at end`, message);
+	else
+		report(token.line, ` at '${token.lexeme}'`, message);
+	return new ParseError();
+}
+
+export class Parser {
+	current = 0;
+	tokens: Token[];
+
+	constructor(tokens: Token[]) {
+		this.tokens = tokens;
+	}
+
+	/** Returns the next token to be parsed. */
+	peek() {
+		return this.tokens[this.current];
+	}
+
+	/** Returns the next token to be parsed, and moves forward. */
+	advance() {
+		const token = this.peek();
+		if (token.type !== TokenType.EOF)
+			this.current++;
+		return token;
+	}
+
+	/** If the next token matches, moves forward and returns it. Otherwise, throws an error. */
+	consume(expected: TokenType, message: string) {
+		const token = this.peek();
+		if (token.type === expected)
+			return this.advance();
+
+		throw error(token, message);
+	}
+
+	get ended() {
+		return this.peek().type === TokenType.EOF;
+	}
+
+	parse_literal() {
+		const token = this.peek();
+		let expr: LiteralExpr;
+
 		switch (token.type) {
 			case TokenType.STRING:
 			case TokenType.NUMBER:
-				return new LiteralExpr(token.literal);
+				expr = new LiteralExpr(token.literal);
+				break;
 			case TokenType.TRUE:
-				return new LiteralExpr(true);
+				expr = new LiteralExpr(true);
+				break;
 			case TokenType.FALSE:
-				return new LiteralExpr(false);
+				expr = new LiteralExpr(false);
+				break;
 			case TokenType.NIL:
-				return new LiteralExpr(null);
+				expr = new LiteralExpr(null);
+				break;
 			default:
-				throw new Error(`Expected literal, got ${token.type} (${token.lexeme})`);
+				throw error(token, `Expected literal.`);
 		}
-	})();
 
-	return { expr, rest: tokens.slice(1) };
-}
-
-export function parse_name(tokens: Token[]) {
-	const token = tokens[0];
-
-	return { expr: new NameExpr(token.lexeme), rest: tokens.slice(1) };
-}
-
-export function parse_list(tokens: Token[]) {
-	let rest = tokens.slice(1);
-	const children: Expr[] = [];
-
-	while (rest[0].type !== TokenType.R_PAREN) {
-		const { expr, rest: new_rest } = parse_expr(rest);
-		children.push(expr);
-
-		if (new_rest.length === 0)
-			throw new Error(`Expected R_PAREN at end of list, reached end of input`);
-
-		rest = new_rest;
+		this.advance();
+		return expr;
 	}
 
-	// Chop off closing parenthesis.
-	return { expr: new ListExpr(children), rest: rest.slice(1) };
-}
-
-export function parse_bindings(tokens: Token[]) {
-	let rest = tokens.slice(1);
-	const bindings: { key: Token, value: Expr }[] = [];
-
-	while (rest[0].type !== TokenType.R_SQUARE) {
-		const name = rest[0];
-
-		if (rest.length === 1)
-			throw new Error(`Unterminated bindings, reached end of input`);
-
-		const { expr, rest: new_rest } = parse_expr(rest.slice(1));
-		bindings.push({ key: name, value: expr });
-
-		if (new_rest.length === 0)
-			throw new Error(`Expected R_SQUARE at end of bindings, reached end of input`);
-
-		rest = new_rest;
+	parse_name() {
+		const token = this.advance();
+		return new NameExpr(token.lexeme);
 	}
 
-	// Chop off closing bracket.
-	return { bindings, rest: rest.slice(1) };
+	parse_list() {
+		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of list.`);
+
+		const children: Expr[] = [];
+
+		while (this.peek().type !== TokenType.R_PAREN && !this.ended)
+			children.push(this.parse_expr());
+
+		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of list.`);
+		return new ListExpr(children);
+	}
+
+	parse_bindings() {
+		this.consume(TokenType.L_SQUARE, `Expected L_SQUARE at start of bindings.`);
+
+		const bindings: Binding[] = [];
+
+		while (this.peek().type === TokenType.IDENTIFIER) {
+			const name = this.advance();
+			const expr = this.parse_expr();
+
+			bindings.push({ key: name, value: expr });
+		}
+
+		this.consume(TokenType.R_SQUARE, `Expected R_SQUARE at end of bindings.`);
+		return bindings;
+	}
+
+	// if_expr:  'if' expr expr expr
+	parse_if() {
+		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of if expression.`);
+		this.consume(TokenType.IF, `Expected 'if' expression.`);
+
+		const cond = this.parse_expr();
+		const true_child = this.parse_expr();
+		const false_child = this.parse_expr();
+
+		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of if expression.`);
+
+		return new IfExpr(cond, true_child, false_child);
+	}
+
+	// let_expr: 'let' bindings expr
+	parse_let() {
+		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of let expression.`);
+		this.consume(TokenType.LET, `Expected 'let' expression.`);
+
+		const bindings = this.parse_bindings();
+		const body = this.parse_expr();
+
+		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of let expression.`);
+
+		return new LetExpr(bindings, body);
+	}
+
+	// loop_expr: 'loop' bindings expr
+	parse_loop() {
+		// TODO
+	}
+
+	// fn_expr: 'fn' identifier? '[' identifier* ']' expr
+	parse_fn() {
+		// TODO
+	}
+
+	parse_expr(): Expr {
+		if (this.ended)
+			throw error(this.peek(), `Expected expr, reached end of input`);
+
+		switch (this.peek().type) {
+			case TokenType.STRING:
+			case TokenType.NUMBER:
+			case TokenType.TRUE:
+			case TokenType.FALSE:
+			case TokenType.NIL:
+				return this.parse_literal();
+
+			case TokenType.IDENTIFIER:
+				return this.parse_name();
+
+			case TokenType.L_PAREN: {
+				const lookahead = this.tokens[this.current + 1];
+
+				if (lookahead.type === TokenType.EOF)
+					error(this.peek(), `Dangling L_PAREN, reached end of input`);
+
+				switch (lookahead.type) {
+					case TokenType.IF:
+						return this.parse_if();
+
+					case TokenType.LET:
+						return this.parse_let();
+
+					case TokenType.LOOP:
+						return this.parse_loop();
+
+					case TokenType.FN:
+						return this.parse_fn();
+
+					default:
+						return this.parse_list();
+				}
+			}
+
+			default:
+				throw error(this.peek(), `Expected expression.`);
+		}
+	}
+}
+
+export function parse(tokens: Token[]) {
+	const parser = new Parser(tokens);
+	try {
+		const program: Expr[] = [];
+		while (!parser.ended)
+			program.push(parser.parse_expr());
+
+		return program;
+	}
+	catch (err) {
+		if (err instanceof ParseError)
+			return [];
+	}
+
+	return [];
 }
 
 /*
 export function parse_op(tokens: Token[]) {
 	if (tokens.length < 2)
-		throw new Error(`Unterminated op expression, got "${tokens.map(t => t.lexeme).join(' ')}" before end of input`);
+		error(`Unterminated op expression, got "${tokens.map(t => t.lexeme).join(' ')}" before end of input`);
 
 	const op = tokens[0];
 	let rest = tokens.slice(1);
@@ -84,126 +218,10 @@ export function parse_op(tokens: Token[]) {
 		children.push(expr);
 
 		if (new_rest.length === 0)
-			throw new Error(`Expected R_PAREN at end of list, reached end of input`);
+			error(`Expected R_PAREN at end of list, reached end of input`);
 
 		rest = new_rest;
 	}
 
 	return { expr: new OpExpr(op, children), rest };
 }*/
-
-// if_expr:  'if' expr expr expr
-export function parse_if(tokens: Token[]) {
-	if (tokens.length < 3)
-		throw new Error(`Unterminated if expression, got "${tokens.map(t => t.lexeme).join(' ')}" before end of input`);
-
-	// '(', if' are the first two tokens.
-	const { expr: cond, rest: c_rest } = parse_expr(tokens.slice(2));
-
-	if (c_rest.length === 0)
-		throw new Error(`Unterminated if expression, only parsed condition before end of input (missing true/false children)`);
-
-	const { expr: true_child, rest: l_rest } = parse_expr(c_rest);
-
-	if (l_rest.length === 0)
-		throw new Error(`Unterminated if expression, only parsed condition and true child before end of input (missing false child)`);
-
-	const { expr: false_child, rest } = parse_expr(l_rest);
-
-	if (rest.length === 0)
-		throw new Error(`Unterminated if expression, missing R_PAREN before end of input`);
-
-	const r_paren = rest[0];
-
-	if (r_paren.type !== TokenType.R_PAREN)
-		throw new Error(`Expected R_PAREN at end of if expression, got ${r_paren.type} (${r_paren.lexeme})`);
-
-	return { expr: new IfExpr(cond, true_child, false_child), rest: rest.slice(1) };
-}
-
-// let_expr: 'let' bindings expr
-export function parse_let(tokens: Token[]) {
-	if (tokens.length < 3)
-		throw new Error(`Unterminated let expression, got "${tokens.map(t => t.lexeme).join(' ')}" before end of input`);
-
-	// '(', let' are the first two tokens.
-	const l_paren = tokens[2];
-
-	if (l_paren.type !== TokenType.L_SQUARE)
-		throw new Error(`Expected L_SQUARE for bindings in let expression, got ${l_paren.type} (${l_paren.lexeme})`);
-
-	const { bindings, rest: b_rest } = parse_bindings(tokens.slice(2));
-
-	if (b_rest.length === 0)
-		throw new Error(`Unterminated let expression, only parsed bindings before end of input (missing body)`);
-
-	const { expr: body, rest } = parse_expr(b_rest);
-
-	if (rest.length === 0)
-		throw new Error(`Unterminated let expression, missing R_PAREN before end of input`);
-
-	const r_paren = rest[0];
-
-	if (r_paren.type !== TokenType.R_PAREN)
-		throw new Error(`Expected R_PAREN at end of let expression, got ${r_paren.type} (${r_paren.lexeme})`);
-
-	return { expr: new LetExpr(bindings, body), rest: rest.slice(1) };
-}
-
-// bindings: '[' (identifier expr)* ']'
-// loop_expr: 'loop' bindings expr
-export function parse_loop(tokens: Token[]) {
-	// TODO
-}
-
-// params: '[' identifier* ']'
-// fn_expr: 'fn' identifier? params expr
-export function parse_fn(tokens: Token[]) {
-	// TODO
-}
-
-export function parse_expr(tokens: Token[]): { expr: Expr, rest: Token[] } {
-	if (tokens.length === 0)
-		throw new Error(`Expected expr, reached end of input`);
-
-	const head = tokens[0];
-
-	switch (head.type) {
-		case TokenType.STRING:
-		case TokenType.NUMBER:
-		case TokenType.TRUE:
-		case TokenType.FALSE:
-		case TokenType.NIL:
-			return parse_literal(tokens);
-
-		case TokenType.IDENTIFIER:
-			return parse_name(tokens);
-
-		case TokenType.L_PAREN: {
-			if (tokens.length === 1)
-				throw new Error(`Dangling L_PAREN, reached end of input`);
-
-			const lookahead = tokens[1];
-
-			switch (lookahead.type) {
-				case TokenType.IF:
-					return parse_if(tokens);
-
-				case TokenType.LET:
-					return parse_let(tokens);
-
-				case TokenType.LOOP:
-					return parse_loop(tokens);
-
-				case TokenType.FN:
-					return parse_fn(tokens);
-
-				default:
-					return parse_list(tokens);
-			}
-		}
-
-		default:
-			throw new Error(`Expected expression of LITERAL, IDENTIFIER or starting with L_PAREN, got ${head.type} (${head.lexeme})`);
-	}
-}
