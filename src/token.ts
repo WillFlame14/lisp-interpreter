@@ -9,7 +9,7 @@ export enum TokenType {
 	IDENTIFIER = 'IDENTIFIER', STRING = 'STRING', NUMBER = 'NUMBER', TRUE = 'TRUE', FALSE = 'FALSE', NIL = 'NIL',
 
 	// keywords
-	IF = 'IF', FN = 'FN', LET = 'LET', LOOP = 'LOOP',
+	IF = 'IF', FN = 'FN', LET = 'LET', LOOP = 'LOOP', RECUR = 'RECUR',
 
 	EOF = 'EOF'
 }

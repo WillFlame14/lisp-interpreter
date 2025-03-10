@@ -5,27 +5,18 @@ const charTokenMap = {
 	'(': TokenType.L_PAREN,
 	')': TokenType.R_PAREN,
 	'[': TokenType.L_SQUARE,
-	']': TokenType.R_SQUARE,
-	// '+': TokenType.PLUS,
-	// '-': TokenType.MINUS,
-	// '*': TokenType.STAR,
-	// '/': TokenType.SLASH,
-	// '=': TokenType.EQ,
-	// '>': TokenType.GT,
-	// '<': TokenType.LT
+	']': TokenType.R_SQUARE
 } as const;
 
 const keywordMap = {
 	true: TokenType.TRUE,
 	false: TokenType.FALSE,
 	nil: TokenType.NIL,
-	// and: TokenType.AND,
-	// or: TokenType.OR,
-	// not: TokenType.NOT,
 	if: TokenType.IF,
 	fn: TokenType.FN,
 	let: TokenType.LET,
-	loop: TokenType.LOOP
+	loop: TokenType.LOOP,
+	recur: TokenType.RECUR
 } as const;
 
 export function scanTokens(source: string) {

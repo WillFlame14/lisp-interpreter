@@ -1,3 +1,4 @@
+import { astPrinter } from './ast.ts';
 import { Environment } from './environment.ts';
 import { Expr, ExprVisitor, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, LoopExpr, FnExpr, isExpr } from './expr.ts';
 import { runtimeError } from './main.ts';
@@ -55,6 +56,27 @@ export class Interpreter implements ExprVisitor<unknown> {
 			'<native fn>'
 		));
 
+		this.globals.define('=', new Callable(
+			-1,
+			(_interpreter: Interpreter, args: unknown[]) => {
+				let result = true;
+				for (let i = 1; i < args.length; i++)
+					result = args[0] === args[i];
+				return result;
+			},
+			'<native fn>'
+		));
+
+		this.globals.define('mod', new Callable(
+			2,
+			(_interpreter: Interpreter, args: unknown[]) => {
+				const a = args[0] as number;
+				const b = args[1] as number;
+				return a % b;
+			},
+			'<native fn>'
+		));
+
 		this.globals.define('print', new Callable(
 			-1,
 			(_interpreter: Interpreter, args: unknown[]) => {
@@ -83,14 +105,19 @@ export class Interpreter implements ExprVisitor<unknown> {
 		if (expr.children.length === 0)
 			throw new RuntimeError(expr.r_paren, 'Empty list in function invocation!');
 
-		const op = this.evaluate(expr.children[0]);
+		const func = this.evaluate(expr.children[0]);
 
-		if (!(op instanceof Callable))
-			throw new RuntimeError(expr.r_paren, `Unable to convert ${JSON.stringify(op)} to a function.`);
+		if (!(func instanceof Callable))
+			throw new RuntimeError(expr.r_paren, `Unable to convert ${JSON.stringify(func)} to a function.`);
+
+		const expected_arity = func.arity === -1 ? expr.children.length - 1 : func.arity;
+
+		if (expected_arity !== expr.children.length - 1)
+			throw new RuntimeError(expr.r_paren, `Function requires ${expected_arity} parameters, got ${expr.children.length - 1}.`);
 
 		const args = expr.children.slice(1).map(child => this.evaluate(child));
 
-		return op.call(this, args);
+		return func.call(this, args);
 	}
 
 	visitIf(expr: IfExpr) {
@@ -118,7 +145,32 @@ export class Interpreter implements ExprVisitor<unknown> {
 	}
 
 	visitFn(expr: FnExpr) {
-		return undefined;
+		const func = new Callable(
+			expr.params.length,
+			(interpreter: Interpreter, args: unknown[]) => {
+				const enclosing = this.env;
+				const nested = new Environment(enclosing);
+
+				for (let i = 0; i < args.length; i++) {
+					const param = expr.params[i].lexeme;
+					nested.define(param, args[i]);
+				}
+
+				if (expr.name !== undefined)
+					enclosing.define(expr.name.lexeme, func);
+
+				try {
+					interpreter.env = nested;
+					return interpreter.evaluate(expr.body);
+				}
+				finally {
+					interpreter.env = enclosing;
+				}
+			},
+			expr.body.accept(astPrinter)
+		);
+
+		return func;
 	}
 }
 

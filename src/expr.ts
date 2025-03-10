@@ -142,9 +142,13 @@ export class FnExpr {
 	params: Token[];
 	body: Expr;
 
-	constructor(params: Token[], body: Expr) {
+	l_paren: Token;
+
+	constructor(params: Token[], body: Expr, l_paren: Token, name?: Token) {
+		this.name = name;
 		this.params = params;
 		this.body = body;
+		this.l_paren = l_paren;
 	}
 
 	accept<T>(visitor: ExprVisitor<T>) {

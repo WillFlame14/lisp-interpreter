@@ -1,5 +1,5 @@
 import { report } from './main.ts';
-import { Expr, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, Binding } from './expr.ts';
+import { Expr, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, Binding, FnExpr } from './expr.ts';
 import { Token, TokenType } from './token.ts';
 
 class ParseError extends Error {}
@@ -105,6 +105,20 @@ export class Parser {
 		return bindings;
 	}
 
+	parse_params() {
+		this.consume(TokenType.L_SQUARE, `Expected L_SQUARE at start of function parameters.`);
+
+		const params: Token[] = [];
+
+		while (this.peek().type === TokenType.IDENTIFIER) {
+			const token = this.advance();
+			params.push(token);
+		}
+
+		this.consume(TokenType.R_SQUARE, `Expected R_SQUARE at end of function parameters.`);
+		return params;
+	}
+
 	// if_expr:  'if' expr expr expr
 	parse_if() {
 		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of if expression.`);
@@ -115,7 +129,6 @@ export class Parser {
 		const false_child = this.parse_expr();
 
 		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of if expression.`);
-
 		return new IfExpr(cond, true_child, false_child);
 	}
 
@@ -128,7 +141,6 @@ export class Parser {
 		const body = this.parse_expr();
 
 		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of let expression.`);
-
 		return new LetExpr(bindings, body);
 	}
 
@@ -139,7 +151,19 @@ export class Parser {
 
 	// fn_expr: 'fn' identifier? '[' identifier* ']' expr
 	parse_fn() {
-		// TODO
+		const l_paren = this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of function.`);
+		this.consume(TokenType.FN, `Expected function declaration.`);
+
+		let name: Token | undefined = undefined;
+
+		if (this.peek().type === TokenType.IDENTIFIER)
+			name = this.consume(TokenType.IDENTIFIER, `e`);
+
+		const params = this.parse_params();
+		const body = this.parse_expr();
+
+		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of function.`);
+		return new FnExpr(params, body, l_paren, name);
 	}
 
 	parse_expr(): Expr {
