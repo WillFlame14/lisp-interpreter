@@ -23,6 +23,10 @@ import { Token } from './token.ts';
 export type Expr = LiteralExpr | NameExpr | ListExpr | IfExpr | LetExpr | LoopExpr | FnExpr
 export type Binding = { key: Token, value: Expr };
 
+export function isExpr(obj: unknown): obj is Expr {
+	return typeof (obj as Expr).accept === 'function';
+}
+
 export interface ExprVisitor<T> {
 	visitLiteral: (expr: LiteralExpr) => T;
 	visitName: (expr: NameExpr) => T;
@@ -47,9 +51,9 @@ export class LiteralExpr {
 }
 
 export class NameExpr {
-	name: string;
+	name: Token;
 
-	constructor(name: string) {
+	constructor(name: Token) {
 		this.name = name;
 	}
 
@@ -61,8 +65,12 @@ export class NameExpr {
 export class ListExpr {
 	children: Expr[];
 
-	constructor(children: Expr[]) {
+	/** The closing parenthesis, used for reporting errors. */
+	r_paren: Token;
+
+	constructor(children: Expr[], r_paren: Token) {
 		this.children = children;
+		this.r_paren = r_paren;
 	}
 
 	accept<T>(visitor: ExprVisitor<T>) {

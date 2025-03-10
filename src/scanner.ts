@@ -64,7 +64,7 @@ export function scanTokens(source: string) {
 				current++;
 
 				// Remove the quotes from the literal.
-				addToken(TokenType.STRING, source.substring(start + 1, current - 2));
+				addToken(TokenType.STRING, source.substring(start + 1, current - 1));
 				break;
 			case ' ':
 			case '\r':

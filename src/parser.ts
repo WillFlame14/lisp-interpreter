@@ -74,7 +74,7 @@ export class Parser {
 
 	parse_name() {
 		const token = this.advance();
-		return new NameExpr(token.lexeme);
+		return new NameExpr(token);
 	}
 
 	parse_list() {
@@ -85,8 +85,8 @@ export class Parser {
 		while (this.peek().type !== TokenType.R_PAREN && !this.ended)
 			children.push(this.parse_expr());
 
-		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of list.`);
-		return new ListExpr(children);
+		const r_paren = this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of list.`);
+		return new ListExpr(children, r_paren);
 	}
 
 	parse_bindings() {
