@@ -1,11 +1,11 @@
-import { ExprVisitor, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, LoopExpr, FnExpr } from './expr.ts';
+import { ExprVisitor, LiteralExpr, NameExpr, SExpr, IfExpr, LetExpr, LoopExpr, FnExpr } from './expr.ts';
 
 export const astPrinter: ExprVisitor<string> = {
 	visitLiteral: (expr: LiteralExpr) => `${typeof expr.value === 'string' ? `"${expr.value}"` : expr.value}`,
 
 	visitName: (expr: NameExpr) => expr.name.lexeme,
 
-	visitList: (expr: ListExpr) =>
+	visitSExpr: (expr: SExpr) =>
 		`(${expr.children.map(c => c.accept(astPrinter)).join(' ')})`,
 
 	// visitOp: (expr: OpExpr) =>

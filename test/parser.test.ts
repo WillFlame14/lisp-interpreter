@@ -2,35 +2,35 @@ import { expect, describe, it } from 'bun:test';
 
 import { scanTokens } from '../src/scanner.ts';
 import { Parser } from '../src/parser.ts';
-import { FnExpr, LetExpr, IfExpr, ListExpr } from '../src/expr.ts';
+import { FnExpr, LetExpr, IfExpr, SExpr } from '../src/expr.ts';
 
 describe('basic parsing', () => {
 	it('parses a list literal', () => {
 		const str = '(3 1 4 1)';
 
 		const expr = new Parser(scanTokens(str)).parse_expr();
-		expect(expr).toBeInstanceOf(ListExpr);
+		expect(expr).toBeInstanceOf(SExpr);
 	});
 
 	it('parses an operator expression', () => {
 		const str = '(+ 2 3)';
 
 		const expr = new Parser(scanTokens(str)).parse_expr();
-		expect(expr).toBeInstanceOf(ListExpr);
+		expect(expr).toBeInstanceOf(SExpr);
 	});
 
 	it('parses a named operator expression', () => {
 		const str = '(print "Hello world!")';
 
 		const expr = new Parser(scanTokens(str)).parse_expr();
-		expect(expr).toBeInstanceOf(ListExpr);
+		expect(expr).toBeInstanceOf(SExpr);
 	});
 
 	it('parses a nested list literal', () => {
 		const str = '(str "f" (add 3 1 (- (* 2 2) (/ 6 (+ 5 2))) 1))';
 
 		const expr = new Parser(scanTokens(str)).parse_expr();
-		expect(expr).toBeInstanceOf(ListExpr);
+		expect(expr).toBeInstanceOf(SExpr);
 	});
 
 	it('parses an if expression', () => {

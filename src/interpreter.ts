@@ -1,8 +1,10 @@
 import { astPrinter } from './ast.ts';
 import { Environment } from './environment.ts';
-import { Expr, ExprVisitor, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, LoopExpr, FnExpr, isExpr } from './expr.ts';
+import { Expr, ExprVisitor, LiteralExpr, NameExpr, SExpr, IfExpr, LetExpr, LoopExpr, FnExpr, isExpr } from './expr.ts';
 import { runtimeError } from './main.ts';
+import { native_funcs } from './native.ts';
 import { Token } from './token.ts';
+import { LVal, LValBoolean, LValFunction, LValNil, LValNumber, LValString, LValType } from './types.ts';
 
 export class RuntimeError extends Error {
 	token: Token;
@@ -13,86 +15,51 @@ export class RuntimeError extends Error {
 	}
 }
 
-function truthy (value: unknown) {
-	return !(value === false || value === null);
+export function truthy (lval: LVal) {
+	return !((lval.type === LValType.BOOLEAN && !lval.value) || lval.type === LValType.NIL);
 }
 
-class Callable {
+export class Callable {
 	arity: number;
-	call: (interpreter: Interpreter, args: unknown[]) => unknown;
+	params: LValType[];
+	call: (interpreter: Interpreter, args: LVal[]) => LVal;
 	toString: string;
 
-	constructor(arity: number, call: (interpreter: Interpreter, args: unknown[]) => unknown, toString: string) {
+	constructor(arity: number, params: LValType[], call: (interpreter: Interpreter, args: LVal[]) => LVal, toString: string) {
 		this.arity = arity;
+		this.params = params;
 		this.call = call;
 		this.toString = toString;
 	}
 }
 
-export class Interpreter implements ExprVisitor<unknown> {
+export class Interpreter implements ExprVisitor<LVal> {
 	globals = new Environment();
 	env = this.globals;
 
 	constructor() {
-		this.globals.define('+', new Callable(
-			-1,
-			(_interpreter: Interpreter, args: unknown[]) => {
-				let sum = 0;
-				for (const arg of args)
-					sum += arg as number;
-				return sum;
-			},
-			'<native fn>'
-		));
-
-		this.globals.define('-', new Callable(
-			-1,
-			(_interpreter: Interpreter, args: unknown[]) => {
-				let sum = args[0] as number;
-				for (let i = 1; i < args.length; i++)
-					sum -= args[i] as number;
-				return sum;
-			},
-			'<native fn>'
-		));
-
-		this.globals.define('=', new Callable(
-			-1,
-			(_interpreter: Interpreter, args: unknown[]) => {
-				let result = true;
-				for (let i = 1; i < args.length; i++)
-					result = args[0] === args[i];
-				return result;
-			},
-			'<native fn>'
-		));
-
-		this.globals.define('mod', new Callable(
-			2,
-			(_interpreter: Interpreter, args: unknown[]) => {
-				const a = args[0] as number;
-				const b = args[1] as number;
-				return a % b;
-			},
-			'<native fn>'
-		));
-
-		this.globals.define('print', new Callable(
-			-1,
-			(_interpreter: Interpreter, args: unknown[]) => {
-				for (const arg of args)
-					console.log(JSON.stringify(arg));
-			},
-			'<native fn>'
-		));
+		for (const { name, arity, params, call } of native_funcs)
+			this.globals.define(name, new LValFunction(new Callable(arity, params, call, '<native fn>'), name));
 	}
 
-	evaluate(expr: Expr): unknown {
+	evaluate(expr: Expr): LVal {
 		return expr.accept(this);
 	}
 
 	visitLiteral(expr: LiteralExpr) {
-		return expr.value;
+		if (typeof expr.value === 'string')
+			return new LValString(expr.value);
+
+		if (typeof expr.value === 'number')
+			return new LValNumber(expr.value);
+
+		if (typeof expr.value === 'boolean')
+			return new LValBoolean(expr.value);
+
+		if (expr.value === null)
+			return new LValNil();
+
+		throw new Error(`Visited literal ${JSON.stringify(expr)} but couldn't interpret it!`);
 	}
 
 	visitName(expr: NameExpr) {
@@ -101,23 +68,30 @@ export class Interpreter implements ExprVisitor<unknown> {
 		return isExpr(value) ? this.evaluate(value) : value;
 	}
 
-	visitList(expr: ListExpr) {
+	visitSExpr(expr: SExpr) {
 		if (expr.children.length === 0)
-			throw new RuntimeError(expr.r_paren, 'Empty list in function invocation!');
+			throw new RuntimeError(expr.r_paren, 'Empty s-expression!');
 
 		const func = this.evaluate(expr.children[0]);
 
-		if (!(func instanceof Callable))
+		if (!(func instanceof LValFunction))
 			throw new RuntimeError(expr.r_paren, `Unable to convert ${JSON.stringify(func)} to a function.`);
 
-		const expected_arity = func.arity === -1 ? expr.children.length - 1 : func.arity;
+		const expected_arity = func.value.arity === -1 ? expr.children.length - 1 : func.value.arity;
 
 		if (expected_arity !== expr.children.length - 1)
 			throw new RuntimeError(expr.r_paren, `Function requires ${expected_arity} parameters, got ${expr.children.length - 1}.`);
 
 		const args = expr.children.slice(1).map(child => this.evaluate(child));
 
-		return func.call(this, args);
+		if (func.value.params.length > 0) {
+			const mistyped_arg_index = args.findIndex((arg, i) => arg.type !== func.value.params[func.value.arity === -1 ? 0 : i]);
+
+			if (mistyped_arg_index !== -1)
+				throw new RuntimeError(expr.r_paren, `Parameter ${mistyped_arg_index + 1} to function (${JSON.stringify(expr.children[mistyped_arg_index + 1])}) doesn't match expected type.`);
+		}
+
+		return func.value.call(this, args);
 	}
 
 	visitIf(expr: IfExpr) {
@@ -129,7 +103,7 @@ export class Interpreter implements ExprVisitor<unknown> {
 		const nested = new Environment(enclosing);
 
 		for (const { key, value } of expr.bindings)
-			nested.define(key.lexeme, value);
+			nested.define(key.lexeme, this.evaluate(value));
 
 		try {
 			this.env = nested;
@@ -141,13 +115,14 @@ export class Interpreter implements ExprVisitor<unknown> {
 	}
 
 	visitLoop(expr: LoopExpr){
-		return undefined;
+		return undefined as unknown as LVal;
 	}
 
 	visitFn(expr: FnExpr) {
 		const func = new Callable(
 			expr.params.length,
-			(interpreter: Interpreter, args: unknown[]) => {
+			[],
+			(interpreter: Interpreter, args: LVal[]) => {
 				const enclosing = this.env;
 				const nested = new Environment(enclosing);
 
@@ -157,7 +132,7 @@ export class Interpreter implements ExprVisitor<unknown> {
 				}
 
 				if (expr.name !== undefined)
-					enclosing.define(expr.name.lexeme, func);
+					enclosing.define(expr.name.lexeme, new LValFunction(func, expr.name.lexeme));
 
 				try {
 					interpreter.env = nested;
@@ -170,7 +145,7 @@ export class Interpreter implements ExprVisitor<unknown> {
 			expr.body.accept(astPrinter)
 		);
 
-		return func;
+		return new LValFunction(func, expr.name?.lexeme);
 	}
 }
 

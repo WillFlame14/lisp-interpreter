@@ -6,21 +6,21 @@ import { Token } from './token.ts';
  * identifier: [a-zA-Z_+-/*=<>!&?][a-zA-Z0-9_+-/*=<>!&?]*
  * 
  * literal: string | number | 'true' | 'false' | 'nil'
- * list: '(' expr* ')'
  * 
  * bindings: '[' (identifier expr)* ']'
  * params: '[' identifier* ']'
  * 
+ * s_expr: '(' expr* ')'
  * if_expr:  'if' expr expr expr
  * let_expr: 'let' bindings expr
  * loop_expr: 'loop' bindings expr
  * fn_expr: 'fn' identifier? params expr
  * 
  * special_form: '(' if_expr | let_expr | loop_expr | fn_expr ')'
- * expr: literal | identifier | list | special_form
+ * expr: literal | identifier | s_expr | special_form
  */
 
-export type Expr = LiteralExpr | NameExpr | ListExpr | IfExpr | LetExpr | LoopExpr | FnExpr
+export type Expr = LiteralExpr | NameExpr | SExpr | IfExpr | LetExpr | LoopExpr | FnExpr
 export type Binding = { key: Token, value: Expr };
 
 export function isExpr(obj: unknown): obj is Expr {
@@ -30,7 +30,7 @@ export function isExpr(obj: unknown): obj is Expr {
 export interface ExprVisitor<T> {
 	visitLiteral: (expr: LiteralExpr) => T;
 	visitName: (expr: NameExpr) => T;
-	visitList: (expr: ListExpr) => T;
+	visitSExpr: (expr: SExpr) => T;
 	// visitOp: (expr: OpExpr) => T;
 	visitIf: (expr: IfExpr) => T;
 	visitLet: (expr: LetExpr) => T;
@@ -62,7 +62,7 @@ export class NameExpr {
 	}
 }
 
-export class ListExpr {
+export class SExpr {
 	children: Expr[];
 
 	/** The closing parenthesis, used for reporting errors. */
@@ -74,7 +74,7 @@ export class ListExpr {
 	}
 
 	accept<T>(visitor: ExprVisitor<T>) {
-		return visitor.visitList(this);
+		return visitor.visitSExpr(this);
 	}
 }
 

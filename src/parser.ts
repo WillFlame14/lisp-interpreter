@@ -1,5 +1,5 @@
 import { report } from './main.ts';
-import { Expr, LiteralExpr, NameExpr, ListExpr, IfExpr, LetExpr, Binding, FnExpr } from './expr.ts';
+import { Expr, LiteralExpr, NameExpr, SExpr, IfExpr, LetExpr, Binding, FnExpr } from './expr.ts';
 import { Token, TokenType } from './token.ts';
 
 class ParseError extends Error {}
@@ -77,16 +77,16 @@ export class Parser {
 		return new NameExpr(token);
 	}
 
-	parse_list() {
-		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of list.`);
+	parse_sexpr() {
+		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of s-expression.`);
 
 		const children: Expr[] = [];
 
 		while (this.peek().type !== TokenType.R_PAREN && !this.ended)
 			children.push(this.parse_expr());
 
-		const r_paren = this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of list.`);
-		return new ListExpr(children, r_paren);
+		const r_paren = this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of s-expression.`);
+		return new SExpr(children, r_paren);
 	}
 
 	parse_bindings() {
@@ -201,7 +201,7 @@ export class Parser {
 						return this.parse_fn();
 
 					default:
-						return this.parse_list();
+						return this.parse_sexpr();
 				}
 			}
 
