@@ -3,7 +3,7 @@ import { Callable } from "./interpreter.ts";
 export enum LValType {
 	NUMBER = 'NUMBER', STRING = 'STRING', BOOLEAN = 'BOOLEAN', NIL = 'NIL',
 
-	SYMBOL = 'SYMBOL', LIST = 'LIST', FUNCTION = 'FUNCTION',
+	SYMBOL = 'SYMBOL', LIST = 'LIST', FUNCTION = 'FUNCTION', S = 'S',
 
 	ANY = 'ANY',
 }

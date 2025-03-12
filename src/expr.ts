@@ -86,12 +86,14 @@ export class ListExpr {
 }
 
 export class SExpr {
+	op: Expr;
 	children: Expr[];
 
 	/** The closing parenthesis, used for reporting errors. */
 	r_paren: Token;
 
-	constructor(children: Expr[], r_paren: Token) {
+	constructor(op: Expr, children: Expr[], r_paren: Token) {
+		this.op = op;
 		this.children = children;
 		this.r_paren = r_paren;
 	}

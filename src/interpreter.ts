@@ -85,22 +85,19 @@ export class Interpreter implements ExprVisitor<LVal> {
 	}
 
 	visitSExpr(expr: SExpr) {
-		if (expr.children.length === 0)
-			throw new RuntimeError(expr.r_paren, 'Empty s-expression!');
-
-		const func = this.evaluate(expr.children[0]);
+		const func = this.evaluate(expr.op);
 
 		if (!(func instanceof LValFunction))
 			throw new RuntimeError(expr.r_paren, `Unable to convert ${JSON.stringify(func)} to a function.`);
 
 		const { arity, params, params_rest } = func.value;
 
-		const expected_arity = arity === -1 ? expr.children.length - 1 : func.value.arity;
+		const expected_arity = arity === -1 ? expr.children.length : func.value.arity;
 
-		if (expected_arity !== expr.children.length - 1)
-			throw new RuntimeError(expr.r_paren, `Function requires ${expected_arity} parameters, got ${expr.children.length - 1}.`);
+		if (expected_arity !== expr.children.length)
+			throw new RuntimeError(expr.r_paren, `Function requires ${expected_arity} parameters, got ${expr.children.length}.`);
 
-		const args = expr.children.slice(1).map(child => this.evaluate(child));
+		const args = expr.children.map(child => this.evaluate(child));
 
 		if (params.length > 0) {
 			for (let i = 0; i < args.length; i++) {
@@ -111,7 +108,7 @@ export class Interpreter implements ExprVisitor<LVal> {
 					continue;
 
 				if (arg.type !== expected_type)
-					throw new RuntimeError(expr.r_paren, `Parameter ${i + 1} to function (${JSON.stringify(expr.children[i + 1])}) doesn't match expected type ${expected_type}.`);
+					throw new RuntimeError(expr.r_paren, `Parameter ${i + 1} to function (${JSON.stringify(expr.children[i])}) doesn't match expected type ${expected_type}.`);
 			}
 		}
 

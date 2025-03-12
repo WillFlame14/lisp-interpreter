@@ -116,17 +116,17 @@ export class Parser {
 		}
 	}
 
-	// s_expr: '(' expr* ')'
+	// s_expr: '(' expr expr* ')'
 	parse_sexpr() {
 		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of s-expression.`);
+		const op = this.parse_expr();
 
 		const children: Expr[] = [];
-
 		while (this.peek().type !== TokenType.R_PAREN && !this.ended)
 			children.push(this.parse_expr());
 
 		const r_paren = this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of s-expression.`);
-		return new SExpr(children, r_paren);
+		return new SExpr(op, children, r_paren);
 	}
 
 	parse_bindings() {
