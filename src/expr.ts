@@ -2,25 +2,30 @@ import { Token } from './token.ts';
 
 /**
  * string: '"' [\x00-\x7F]* '"'
- * number: ([0-9.])*
- * identifier: [a-zA-Z_+-/*=<>!&?][a-zA-Z0-9_+-/*=<>!&?]*
+ * number: [0-9.]+
+ * symbol: [a-zA-Z_+-/*=<>!&?][a-zA-Z0-9_+-/*=<>!&?]*
  * 
- * literal: string | number | 'true' | 'false' | 'nil'
+ * literal: 'true' | 'false' | 'nil' | string | number
+ * list: '(' primary* ')'
+ * primary: literal | symbol | list
  * 
- * bindings: '[' (identifier expr)* ']'
- * params: '[' identifier* ']'
+ * bindings: '[' (symbol expr)* ']'
+ * params: '[' symbol* ']'
  * 
  * s_expr: '(' expr* ')'
  * if_expr:  'if' expr expr expr
  * let_expr: 'let' bindings expr
  * loop_expr: 'loop' bindings expr
- * fn_expr: 'fn' identifier? params expr
+ * recur_expr: 'recur' expr*
+ * fn_expr: 'fn' symbol? params expr
+ * quote_expr: 'quote' primary
  * 
- * special_form: '(' if_expr | let_expr | loop_expr | fn_expr ')'
- * expr: literal | identifier | s_expr | special_form
+ * special_form: '(' if_expr | let_expr | loop_expr | fn_expr | quote_expr ')'
+ * expr: literal | symbol | special_form | s_expr
  */
 
-export type Expr = LiteralExpr | NameExpr | SExpr | IfExpr | LetExpr | LoopExpr | FnExpr
+export type Expr = LiteralExpr | SymbolExpr | SExpr | IfExpr | LetExpr | LoopExpr | RecurExpr | FnExpr | QuoteExpr;
+export type PrimaryExpr = LiteralExpr | SymbolExpr | ListExpr;
 export type Binding = { key: Token, value: Expr };
 
 export function isExpr(obj: unknown): obj is Expr {
@@ -29,13 +34,15 @@ export function isExpr(obj: unknown): obj is Expr {
 
 export interface ExprVisitor<T> {
 	visitLiteral: (expr: LiteralExpr) => T;
-	visitName: (expr: NameExpr) => T;
+	visitSymbol: (expr: SymbolExpr) => T;
+	visitList: (expr: ListExpr) => T;
 	visitSExpr: (expr: SExpr) => T;
-	// visitOp: (expr: OpExpr) => T;
 	visitIf: (expr: IfExpr) => T;
 	visitLet: (expr: LetExpr) => T;
 	visitLoop: (expr: LoopExpr) => T;
+	visitRecur: (expr: RecurExpr) => T;
 	visitFn: (expr: FnExpr) => T;
+	visitQuote: (expr: QuoteExpr) => T;
 }
 
 export class LiteralExpr {
@@ -50,7 +57,7 @@ export class LiteralExpr {
 	}
 }
 
-export class NameExpr {
+export class SymbolExpr {
 	name: Token;
 
 	constructor(name: Token) {
@@ -58,7 +65,23 @@ export class NameExpr {
 	}
 
 	accept<T>(visitor: ExprVisitor<T>) {
-		return visitor.visitName(this);
+		return visitor.visitSymbol(this);
+	}
+}
+
+export class ListExpr {
+	children: PrimaryExpr[];
+
+	/** The closing parenthesis, used for reporting errors. */
+	r_paren: Token;
+
+	constructor(children: PrimaryExpr[], r_paren: Token) {
+		this.children = children;
+		this.r_paren = r_paren;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitList(this);
 	}
 }
 
@@ -77,21 +100,6 @@ export class SExpr {
 		return visitor.visitSExpr(this);
 	}
 }
-
-/*
-export class OpExpr {
-	op: Token;
-	children: Expr[];
-
-	constructor(op: Token, children: Expr[]) {
-		this.op = op;
-		this.children = children;
-	}
-
-	accept<T>(visitor: ExprVisitor<T>) {
-		return visitor.visitOp(this);
-	}
-}*/
 
 export class IfExpr {
 	cond: Expr;
@@ -126,14 +134,30 @@ export class LetExpr {
 export class LoopExpr {
 	bindings: Binding[];
 	body: Expr;
+	l_paren: Token;
 
-	constructor(bindings: Binding[], body: Expr) {
+	constructor(bindings: Binding[], body: Expr, l_paren: Token) {
 		this.bindings = bindings;
 		this.body = body;
+		this.l_paren = l_paren;
 	}
 
 	accept<T>(visitor: ExprVisitor<T>) {
 		return visitor.visitLoop(this);
+	}
+}
+
+export class RecurExpr {
+	loop_vals: Expr[];
+	l_paren: Token;
+
+	constructor(loop_vals: Expr[], l_paren: Token) {
+		this.loop_vals = loop_vals;
+		this.l_paren = l_paren;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitRecur(this);
 	}
 }
 
@@ -153,5 +177,19 @@ export class FnExpr {
 
 	accept<T>(visitor: ExprVisitor<T>) {
 		return visitor.visitFn(this);
+	}
+}
+
+export class QuoteExpr {
+	body: PrimaryExpr;
+	l_paren: Token;
+
+	constructor(body: PrimaryExpr, l_paren: Token) {
+		this.body = body;
+		this.l_paren = l_paren;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitQuote(this);
 	}
 }

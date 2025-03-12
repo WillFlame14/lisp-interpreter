@@ -24,6 +24,7 @@ export default tseslint.config(
 			'eol-last': 'warn',
 			'no-trailing-spaces': ['warn', { ignoreComments: true }],
 			'prefer-const': 'warn',
+			'curly': ['warn', 'multi-or-nest', 'consistent'],
 			'@typescript-eslint/restrict-template-expressions': 'off'
 		}
 	}

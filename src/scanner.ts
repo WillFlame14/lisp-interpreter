@@ -16,7 +16,8 @@ const keywordMap = {
 	fn: TokenType.FN,
 	let: TokenType.LET,
 	loop: TokenType.LOOP,
-	recur: TokenType.RECUR
+	recur: TokenType.RECUR,
+	quote: TokenType.QUOTE
 } as const;
 
 export function scanTokens(source: string) {
@@ -67,19 +68,17 @@ export function scanTokens(source: string) {
 			default:
 				if (/[0-9.]/.test(char)) {
 					// Scan number
-					while (/[0-9.]/.test(source.charAt(current)) && current < source.length) {
+					while (/[0-9.]/.test(source.charAt(current)) && current < source.length)
 						current++;
-					}
 
 					addToken(TokenType.NUMBER, Number(source.substring(start, current)));
 					break;
 				}
 
 				if (/[a-zA-Z_+-/*=<>!&?]/.test(char)) {
-					// Scan identifier
-					while (/[a-zA-Z0-9_+\-*/=<>!&?]/.test(source.charAt(current)) && current < source.length) {
+					// Scan symbol
+					while (/[a-zA-Z0-9_+\-*/=<>!&?]/.test(source.charAt(current)) && current < source.length)
 						current++;
-					}
 
 					const string = source.substring(start, current);
 					if (string in keywordMap) {
@@ -87,7 +86,7 @@ export function scanTokens(source: string) {
 						addToken(keyword);
 					}
 					else {
-						addToken(TokenType.IDENTIFIER);
+						addToken(TokenType.SYMBOL);
 					}
 					break;
 				}

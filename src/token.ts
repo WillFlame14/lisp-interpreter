@@ -6,10 +6,10 @@ export enum TokenType {
 	// PLUS = 'PLUS', MINUS = 'MINUS', STAR = 'STAR', SLASH = 'SLASH', EQ = 'EQ', GT = 'GT', LT = 'LT', AND = 'AND', OR = 'OR', NOT = 'NOT',
 
 	// literals
-	IDENTIFIER = 'IDENTIFIER', STRING = 'STRING', NUMBER = 'NUMBER', TRUE = 'TRUE', FALSE = 'FALSE', NIL = 'NIL',
+	SYMBOL = 'SYMBOL', STRING = 'STRING', NUMBER = 'NUMBER', TRUE = 'TRUE', FALSE = 'FALSE', NIL = 'NIL',
 
 	// keywords
-	IF = 'IF', FN = 'FN', LET = 'LET', LOOP = 'LOOP', RECUR = 'RECUR',
+	IF = 'IF', FN = 'FN', LET = 'LET', LOOP = 'LOOP', RECUR = 'RECUR', QUOTE = 'QUOTE',
 
 	EOF = 'EOF'
 }

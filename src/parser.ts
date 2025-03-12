@@ -1,5 +1,5 @@
 import { report } from './main.ts';
-import { Expr, LiteralExpr, NameExpr, SExpr, IfExpr, LetExpr, Binding, FnExpr } from './expr.ts';
+import { Expr, LiteralExpr, SymbolExpr, SExpr, IfExpr, LetExpr, Binding, FnExpr, QuoteExpr, ListExpr, PrimaryExpr } from './expr.ts';
 import { Token, TokenType } from './token.ts';
 
 class ParseError extends Error {}
@@ -72,11 +72,51 @@ export class Parser {
 		return expr;
 	}
 
-	parse_name() {
+	parse_symbol() {
 		const token = this.advance();
-		return new NameExpr(token);
+		return new SymbolExpr(token);
 	}
 
+	parse_list() {
+		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of list.`);
+
+		const children: PrimaryExpr[] = [];
+
+		while (this.peek().type !== TokenType.R_PAREN && !this.ended)
+			children.push(this.parse_primary());
+
+		const r_paren = this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of list.`);
+		return new ListExpr(children, r_paren);
+	}
+
+	// primary: literal | symbol | list
+	parse_primary() {
+		switch (this.peek().type) {
+			case TokenType.STRING:
+			case TokenType.NUMBER:
+			case TokenType.TRUE:
+			case TokenType.FALSE:
+			case TokenType.NIL:
+				return this.parse_literal();
+
+			case TokenType.SYMBOL:
+			case TokenType.IF:
+			case TokenType.LET:
+			case TokenType.LOOP:
+			case TokenType.FN:
+			case TokenType.RECUR:
+			case TokenType.QUOTE:
+				return this.parse_symbol();
+
+			case TokenType.L_PAREN:
+				return this.parse_list();
+
+			default:
+				throw error(this.peek(), `Expected primary expression.`);
+		}
+	}
+
+	// s_expr: '(' expr* ')'
 	parse_sexpr() {
 		this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of s-expression.`);
 
@@ -94,7 +134,7 @@ export class Parser {
 
 		const bindings: Binding[] = [];
 
-		while (this.peek().type === TokenType.IDENTIFIER) {
+		while (this.peek().type === TokenType.SYMBOL) {
 			const name = this.advance();
 			const expr = this.parse_expr();
 
@@ -110,7 +150,7 @@ export class Parser {
 
 		const params: Token[] = [];
 
-		while (this.peek().type === TokenType.IDENTIFIER) {
+		while (this.peek().type === TokenType.SYMBOL) {
 			const token = this.advance();
 			params.push(token);
 		}
@@ -149,21 +189,37 @@ export class Parser {
 		// TODO
 	}
 
-	// fn_expr: 'fn' identifier? '[' identifier* ']' expr
+	// recur_expr: 'recur' expr*
+	parse_recur() {
+		// TODO
+	}
+
+	// fn_expr: 'fn' symbol? '[' symbol* ']' expr
 	parse_fn() {
 		const l_paren = this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of function.`);
 		this.consume(TokenType.FN, `Expected function declaration.`);
 
 		let name: Token | undefined = undefined;
 
-		if (this.peek().type === TokenType.IDENTIFIER)
-			name = this.consume(TokenType.IDENTIFIER, `e`);
+		if (this.peek().type === TokenType.SYMBOL)
+			name = this.consume(TokenType.SYMBOL, `e`);
 
 		const params = this.parse_params();
 		const body = this.parse_expr();
 
 		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of function.`);
 		return new FnExpr(params, body, l_paren, name);
+	}
+
+	// quote_expr: 'quote' primary
+	parse_quote() {
+		const l_paren = this.consume(TokenType.L_PAREN, `Expected L_PAREN at start of quoted form.`);
+		this.consume(TokenType.QUOTE, `Expected quoted form.`);
+
+		const body = this.parse_primary();
+
+		this.consume(TokenType.R_PAREN, `Expected R_PAREN at end of quoted form.`);
+		return new QuoteExpr(body, l_paren);
 	}
 
 	parse_expr(): Expr {
@@ -178,8 +234,8 @@ export class Parser {
 			case TokenType.NIL:
 				return this.parse_literal();
 
-			case TokenType.IDENTIFIER:
-				return this.parse_name();
+			case TokenType.SYMBOL:
+				return this.parse_symbol();
 
 			case TokenType.L_PAREN: {
 				const lookahead = this.tokens[this.current + 1];
@@ -194,11 +250,17 @@ export class Parser {
 					case TokenType.LET:
 						return this.parse_let();
 
-					case TokenType.LOOP:
-						return this.parse_loop();
+						// case TokenType.LOOP:
+						// 	return this.parse_loop();
+
+						// case TokenType.RECUR:
+						// 	return this.parse_recur();
 
 					case TokenType.FN:
 						return this.parse_fn();
+
+					case TokenType.QUOTE:
+						return this.parse_quote();
 
 					default:
 						return this.parse_sexpr();
@@ -227,25 +289,3 @@ export function parse(tokens: Token[]) {
 
 	return [];
 }
-
-/*
-export function parse_op(tokens: Token[]) {
-	if (tokens.length < 2)
-		error(`Unterminated op expression, got "${tokens.map(t => t.lexeme).join(' ')}" before end of input`);
-
-	const op = tokens[0];
-	let rest = tokens.slice(1);
-	const children: Expr[] = [];
-
-	while (rest[0].type !== TokenType.R_PAREN) {
-		const { expr, rest: new_rest } = parse_expr(rest);
-		children.push(expr);
-
-		if (new_rest.length === 0)
-			error(`Expected R_PAREN at end of list, reached end of input`);
-
-		rest = new_rest;
-	}
-
-	return { expr: new OpExpr(op, children), rest };
-}*/

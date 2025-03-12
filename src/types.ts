@@ -3,7 +3,9 @@ import { Callable } from "./interpreter.ts";
 export enum LValType {
 	NUMBER = 'NUMBER', STRING = 'STRING', BOOLEAN = 'BOOLEAN', NIL = 'NIL',
 
-	LIST = 'LIST', FUNCTION = 'FUNCTION'
+	SYMBOL = 'SYMBOL', LIST = 'LIST', FUNCTION = 'FUNCTION',
+
+	ANY = 'ANY',
 }
 
 export interface LVal {
@@ -41,6 +43,15 @@ export class LValBoolean implements LVal {
 export class LValNil implements LVal {
 	type = LValType.NIL;
 	value = null;
+}
+
+export class LValSymbol implements LVal {
+	type = LValType.SYMBOL;
+	value: string;
+
+	constructor(value: string) {
+		this.value = value;
+	}
 }
 
 export class LValList implements LVal {
