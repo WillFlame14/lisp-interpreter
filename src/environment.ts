@@ -1,20 +1,19 @@
 import { RuntimeError } from './interpreter.ts';
 import { Token } from './token.ts';
-import { LVal } from './types.ts';
 
-export class Environment {
-	enclosing?: Environment;
-	symbolMap: Record<string, LVal> = {};
+export class Environment<T> {
+	enclosing?: Environment<T>;
+	symbolMap: Record<string, T> = {};
 
-	constructor(enclosing?: Environment) {
+	constructor(enclosing?: Environment<T>) {
 		this.enclosing = enclosing;
 	}
 
-	define(key: string, value: LVal) {
+	define(key: string, value: T) {
 		this.symbolMap[key] = value;
 	}
 
-	retrieve(key: Token): LVal {
+	retrieve(key: Token): T {
 		if (key.lexeme in this.symbolMap)
 			return this.symbolMap[key.lexeme];
 
@@ -22,5 +21,20 @@ export class Environment {
 			return this.enclosing.retrieve(key);
 
 		throw new RuntimeError(key, `Unable to resolve symbol ${key.lexeme}.`);
+	}
+}
+
+export class TranslatorEnv extends Environment<number> {
+	local_vars = 0;
+	params = -1;
+
+	bind(key: string, local: boolean) {
+		const index = local ? this.local_vars : this.params;
+		this.symbolMap[key] = index;
+
+		if (local)
+			this.local_vars++;
+		else
+			this.params--;
 	}
 }

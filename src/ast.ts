@@ -23,7 +23,7 @@ export const astPrinter: ExprVisitor<string> = {
 	visitLoop: (expr: LoopExpr) =>
 		`(loop [${expr.bindings.map(b => `${b.key.lexeme} ${b.value.accept(astPrinter)}`).join(' ')}] ${expr.body.accept(astPrinter)})`,
 
-	visitRecur: (expr: RecurExpr) => ``,
+	visitRecur: (_expr: RecurExpr) => ``,
 
 	visitFn: (expr: FnExpr) =>
 		`(fn ${expr.name?.lexeme ?? ''}[${expr.params.map(p => p.lexeme).join(' ')}] ${expr.body.accept(astPrinter)})`,

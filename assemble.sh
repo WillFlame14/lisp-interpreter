@@ -1,9 +1,9 @@
 #!/bin/bash
 
-for filename in *.s; do
+for filename in output/*.s; do
     nasm -O1 -f elf -g -F dwarf "$filename"
 done
 
-ld -melf_i386 -o main *.o
+ld -melf_i386 -o output/main output/*.o
 
-./main; echo $?
+./output/main; echo $?

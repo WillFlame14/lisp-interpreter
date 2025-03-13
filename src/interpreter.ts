@@ -36,7 +36,7 @@ export class Callable {
 }
 
 export class Interpreter implements ExprVisitor<LVal> {
-	globals = new Environment();
+	globals = new Environment<LVal>();
 	env = this.globals;
 
 	constructor() {

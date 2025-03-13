@@ -1,11 +1,13 @@
 import * as fs from 'node:fs';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { execFile } from 'node:child_process';
 
 import { scanTokens } from './scanner.ts';
 import { parse } from './parser.ts';
 import { interpret, RuntimeError } from './interpreter.ts';
 import { astPrinter } from './ast.ts';
+import { compile } from './asm.ts';
 
 let hadError = false, hadRuntimeError = false;
 
@@ -22,13 +24,22 @@ function runFile(path: string) {
 	console.log(`Interpreting file ${path}`);
 
 	const source = fs.readFileSync(path, 'utf8');
-	run(source);
+	const program = run(source);
 
 	if (hadError)
 		process.exit(65);
 
 	if (hadRuntimeError)
 		process.exit(70);
+
+	if (program !== undefined) {
+		const native = fs.readFileSync('src/native.asm', 'utf8');
+		fs.writeFileSync('output/out.s', native + '\n\n' + compile(program));
+
+		execFile('./assemble.sh', (_error, stdout, _stderr) => {
+			console.dir(stdout);
+		});
+	}
 }
 
 function prompt() {
@@ -53,6 +64,8 @@ function run(source: string) {
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
 	interpret(program);
+
+	return program;
 }
 
 export function error(line: number, message: string) {
