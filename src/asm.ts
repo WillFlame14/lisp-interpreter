@@ -1,11 +1,21 @@
 import { TranslatorEnv } from './environment.ts';
-import { Expr, FnExpr, IfExpr, LetExpr, LiteralExpr, SExpr, SymbolExpr } from './expr.ts';
+import { Expr, FnExpr, IfExpr, LetExpr, ListExpr, LiteralExpr, PrimaryExpr, QuoteExpr, SExpr, SymbolExpr } from './expr.ts';
 
 const nativeMap = {
 	'+': 'plus',
 	'-': 'minus',
-	'=': 'eq'
+	'=': 'eq',
+	peek: 'peek',
+	nth: 'nth',
+	cons: 'cons'
 };
+
+const INTEGER_SHIFT = 2;
+const encodeInt = (value: number) => value << INTEGER_SHIFT;
+const isInt = (value: number) => (value & 0x11) === 0;
+const decodeInt = (value: number) => value >> INTEGER_SHIFT;
+
+const NULL = 0;
 
 function format_mem(register: string, index: number) {
 	if (index >= 0)
@@ -43,6 +53,36 @@ class Translator {
 			return [`mov eax, ${format_mem('ebp', entry)}`];
 		else
 			return [`mov eax, ${entry}`]
+	}
+
+	compile_primary(expr: PrimaryExpr) {
+		if (expr instanceof LiteralExpr)
+			return this.compile_literal(expr);
+		else if (expr instanceof SymbolExpr)
+			return this.compile_symbol(expr);
+		else
+			return this.compile_list(expr);
+	}
+
+	compile_list(expr: ListExpr) {
+		let asm: string[] = [];
+
+		for (const child of expr.children)
+			asm = asm.concat([...this.compile_primary(child), 'push eax']);
+
+		for (let i = 0; i < expr.children.length; i++) {
+			asm = asm.concat([
+				'mov eax, 8',
+				'call malloc',
+				'pop ebx',
+				'mov [eax], ebx',								// value
+				`mov [eax+4], word ${i === 0 ? NULL : 'ecx'}`,	// next pointer (NULL if tail, otherwise ecx)
+				'mov ecx, eax'									// store 'next' in ecx
+			]);
+		}
+
+		// Pointer to head of list is stored in eax
+		return asm;
 	}
 
 	compile_s(expr: SExpr) {
@@ -122,6 +162,9 @@ class Translator {
 		if (expr instanceof SymbolExpr)
 			return this.compile_symbol(expr);
 
+		if (expr instanceof ListExpr)
+			return this.compile_list(expr);
+
 		if (expr instanceof SExpr)
 			return this.compile_s(expr);
 
@@ -133,6 +176,9 @@ class Translator {
 
 		if (expr instanceof FnExpr)
 			return this.compile_fn(expr);
+
+		if (expr instanceof QuoteExpr)
+			return this.compile_primary(expr.body);
 
 		throw new Error();
 	}

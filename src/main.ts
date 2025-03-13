@@ -63,7 +63,7 @@ function run(source: string) {
 
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
-	// interpret(program);
+	interpret(program);
 
 	return program;
 }
