@@ -37,8 +37,12 @@ class Translator {
 		if (expr.name.lexeme in nativeMap)
 			return [`mov eax, ${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`];
 
-		const index = this.env.retrieve(expr.name);
-		return [`mov eax, ${format_mem('ebp', index)}`];
+		const entry = this.env.retrieve(expr.name);
+
+		if (typeof entry === 'number')
+			return [`mov eax, ${format_mem('ebp', entry)}`];
+		else
+			return [`mov eax, ${entry}`]
 	}
 
 	compile_s(expr: SExpr) {
@@ -98,10 +102,9 @@ class Translator {
 		for (const token of expr.params)
 			nested.bind(token.lexeme, false);
 
-		// if (expr.name !== undefined) {
-			// asm = [`push ${label_fn}`, ...asm];
-			// enclosing.bind(expr.name.lexeme, true);
-		// }
+		// Allow recursion
+		if (expr.name !== undefined)
+			nested.define(expr.name.lexeme, label_fn);
 
 		try {
 			this.env = nested;
@@ -139,7 +142,7 @@ export function compile(program: Expr[]) {
 	const translator = new Translator();
 
 	const prelude = ['global _start', '_start:', 'mov ebp, esp'];
-	const coda = ['mov ebx, eax', 'mov eax, 1','int 0x80'];
+	const coda = ['mov ebx, eax', 'mov eax, 1','int 0x80', '', 'section .data:', 'char:', 'dd 0'];
 
 	return [...prelude, ...(program.flatMap(expr => translator.compile_expr(expr))), ...coda].join('\n');
 }

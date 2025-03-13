@@ -26,3 +26,17 @@ eq:
 	movzx eax, al
 	pop ebp
 	ret
+
+; Outputs the low-order byte of eax to standard output.
+nativeWrite:
+    push ebx       ; callee save ebx
+    mov [char], al ; save the low order byte in memory
+    mov eax, 4     ; sys_write system call
+    mov ecx, char  ; address of bytes to write
+    mov ebx, 1     ; stdout
+    mov edx, 1     ; number of bytes to write
+    int 0x80
+    mov eax, 0     ; return 0
+    pop ebx        ; restore ebx
+    ret
+

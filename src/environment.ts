@@ -24,7 +24,7 @@ export class Environment<T> {
 	}
 }
 
-export class TranslatorEnv extends Environment<number> {
+export class TranslatorEnv extends Environment<number | string> {
 	local_vars = 0;
 	params = -1;
 
