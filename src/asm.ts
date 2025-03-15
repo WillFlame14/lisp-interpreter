@@ -6,8 +6,10 @@ const nativeMap = {
 	'-': 'minus',
 	'=': 'eq',
 	peek: 'peek',
+	pop: 'pop',
 	nth: 'nth',
-	cons: 'cons'
+	cons: 'cons',
+	count: 'count'
 };
 
 const INTEGER_SHIFT = 2;
@@ -28,103 +30,121 @@ class Translator {
 	env = new TranslatorEnv();
 	id = 0;
 
+	asm: string[] = [];
+	data: string[] = [];
+
+	closure: string | undefined = undefined;
+
 	getLabel() {
 		this.id++;
 		return `label_${this.id}`;
 	}
 
 	compile_literal(expr: LiteralExpr) {
-		if (typeof expr.value === 'number')
-			return [`mov eax, ${expr.value}`];
+		if (typeof expr.value === 'number') {
+			this.asm.push(`mov eax, ${expr.value}`);
+			return;
+		}
 
-		else if (typeof expr.value === 'boolean')
-			return [`mov eax, ${expr.value ? 1 : 0}`];
+		if (typeof expr.value === 'boolean') {
+			this.asm.push(`mov eax, ${expr.value ? 1 : 0}`);
+			return;
+		}
 
 		throw new Error();
 	}
 
 	compile_symbol(expr: SymbolExpr) {
-		if (expr.name.lexeme in nativeMap)
-			return [`mov eax, ${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`];
+		if (expr.name.lexeme in nativeMap) {
+			this.asm.push(`mov eax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`);
+			return;
+		}
 
 		const entry = this.env.retrieve(expr.name);
 
 		if (typeof entry === 'number')
-			return [`mov eax, ${format_mem('ebp', entry)}`];
+			this.asm.push(`mov eax, ${format_mem('ebp', entry)}`);
 		else
-			return [`mov eax, ${entry}`]
+			this.asm.push(`mov eax, ${entry}`);
 	}
 
 	compile_primary(expr: PrimaryExpr) {
 		if (expr instanceof LiteralExpr)
-			return this.compile_literal(expr);
+			this.compile_literal(expr);
 		else if (expr instanceof SymbolExpr)
-			return this.compile_symbol(expr);
+			this.compile_symbol(expr);
 		else
-			return this.compile_list(expr);
+			this.compile_list(expr);
 	}
 
 	compile_list(expr: ListExpr) {
-		let asm: string[] = [];
-
-		for (const child of expr.children)
-			asm = asm.concat([...this.compile_primary(child), 'push eax']);
+		for (const child of expr.children) {
+			this.compile_primary(child);
+			this.asm.push('push eax');
+		}
 
 		for (let i = 0; i < expr.children.length; i++) {
-			asm = asm.concat([
+			this.asm.push(
 				'mov eax, 8',
-				'call malloc',
+				'call __allocate',
+				...(i === 0 ? [] : ['pop ecx']),					// pop 'next' ptr into ecx
 				'pop ebx',
-				'mov [eax], ebx',								// value
-				`mov [eax+4], word ${i === 0 ? NULL : 'ecx'}`,	// next pointer (NULL if tail, otherwise ecx)
-				'mov ecx, eax'									// store 'next' in ecx
-			]);
+				'mov [eax], ebx',									// value
+				`mov [eax+4], ${i === 0 ? `word ${NULL}` : 'ecx'}`,	// next pointer (NULL if tail, otherwise ecx)
+				'push eax'											// store 'next' on stack
+			);
 		}
 
 		// Pointer to head of list is stored in eax
-		return asm;
+		this.asm.push('add esp, 4');
 	}
 
 	compile_s(expr: SExpr) {
-		let asm: string[] = [];
-
 		// Compute all args and push onto stack
-		for (const child of expr.children)
-			asm = asm.concat([...this.compile_expr(child), 'push eax']);
+		for (const child of expr.children) {
+			this.compile_expr(child);
+			this.asm.push('push eax');
+		}
 
 		// Determine function in eax, then call it
-		return asm.concat([...this.compile_expr(expr.op), 'call eax', `add esp, ${expr.children.length * 4}`]);
+		this.compile_expr(expr.op);
+
+		// Insert closure env as first parameter
+
+
+		this.asm.push('call eax', `add esp, ${expr.children.length * 4}`);
 	}
 
 	compile_if(expr: IfExpr) {
-		let asm: string[] = [];
-
 		const label_true = this.getLabel();
 		const label_after = this.getLabel();
 
-		asm = asm.concat([...this.compile_expr(expr.cond), 'cmp eax, 1', `je ${label_true}`]);
+		this.compile_expr(expr.cond);
+		this.asm.push('cmp eax, 1', `je ${label_true}`);
 
-		asm = asm.concat([...this.compile_expr(expr.false_child), `jmp ${label_after}`]);
+		this.compile_expr(expr.false_child);
+		this.asm.push(`jmp ${label_after}`);
 
-		asm = asm.concat([`${label_true}:`, ...this.compile_expr(expr.true_child), `${label_after}:`]);
-
-		return asm;
+		this.asm.push(`${label_true}:`);
+		this.compile_expr(expr.true_child);
+		this.asm.push(`${label_after}:`);
 	}
 
 	compile_let(expr: LetExpr) {
-		let asm: string[] = [];
-
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing);
+		const nested = new TranslatorEnv(enclosing, true);
+
+		this.env = nested;
 
 		for (const { key, value } of expr.bindings) {
-			asm = asm.concat([...this.compile_expr(value), 'push eax']);
+			this.compile_expr(value);
+			this.asm.push('push eax');
 			nested.bind(key.lexeme, true);
 		}
 
 		try {
-			this.env = nested;
-			return asm.concat([...this.compile_expr(expr.body), `add esp, ${nested.local_vars * 4}`]);
+			this.compile_expr(expr.body);
+			this.asm.push(`add esp, ${nested.local_vars * 4}`);
 		}
 		finally {
 			this.env = enclosing;
@@ -134,61 +154,96 @@ class Translator {
 	compile_fn(expr: FnExpr) {
 		const label_after = this.getLabel();
 		const label_fn = `USER_${expr.name === undefined ? `anon_${this.getLabel()}` : `named_${expr.name.lexeme}_${this.getLabel()}`}`;
-		let asm = [`jmp ${label_after}`, `${label_fn}:`, 'push ebp', 'mov ebp, esp'];
+
+		this.asm.push(
+			`jmp ${label_after}`,
+			`${label_fn}:`,
+			'push ebp',
+			'mov ebp, esp');
 
 		const enclosing = this.env;
 		const nested = new TranslatorEnv(enclosing);
 
-		for (const token of expr.params)
+		// Insert closure env as first parameter
+		// const keys = Object.keys(enclosing.symbolMap);
+		// for (let i = 0; i < keys.length; i++)
+		// 	nested.define(keys[i], `${i}`);
+
+		// nested.local_vars++;
+
+		for (const token of expr.params.toReversed())
 			nested.bind(token.lexeme, false);
 
 		// Allow recursion
 		if (expr.name !== undefined)
 			nested.define(expr.name.lexeme, label_fn);
 
+		this.data.push(`${label_fn}_closure:`, ...Object.entries(enclosing.symbolMap).map(([_, value]) => `dd ${value}`));
+
 		try {
 			this.env = nested;
-			return asm.concat([...this.compile_expr(expr.body), 'pop ebp', 'ret', `${label_after}:`, `mov eax, ${label_fn}`]);
+			this.compile_expr(expr.body);
+			this.asm.push(
+				'pop ebp',
+				'ret',
+				`${label_after}:`,
+				`mov eax, ${label_fn}`);
 		}
 		finally {
 			this.env = enclosing;
 		}
 	}
 
-	compile_expr(expr: Expr): string[] {
+	compile_expr(expr: Expr) {
 		if (expr instanceof LiteralExpr)
-			return this.compile_literal(expr);
+			this.compile_literal(expr);
 
-		if (expr instanceof SymbolExpr)
-			return this.compile_symbol(expr);
+		else if (expr instanceof SymbolExpr)
+			this.compile_symbol(expr);
 
-		if (expr instanceof ListExpr)
-			return this.compile_list(expr);
+		else if (expr instanceof ListExpr)
+			this.compile_list(expr);
 
-		if (expr instanceof SExpr)
-			return this.compile_s(expr);
+		else if (expr instanceof SExpr)
+			this.compile_s(expr);
 
-		if (expr instanceof IfExpr)
-			return this.compile_if(expr);
+		else if (expr instanceof IfExpr)
+			this.compile_if(expr);
 
-		if (expr instanceof LetExpr)
-			return this.compile_let(expr);
+		else if (expr instanceof LetExpr)
+			this.compile_let(expr);
 
-		if (expr instanceof FnExpr)
-			return this.compile_fn(expr);
+		else if (expr instanceof FnExpr)
+			this.compile_fn(expr);
 
-		if (expr instanceof QuoteExpr)
-			return this.compile_primary(expr.body);
-
-		throw new Error();
+		else if (expr instanceof QuoteExpr)
+			this.compile_primary(expr.body);
+		else
+			throw new Error();
 	}
 }
 
 export function compile(program: Expr[]) {
 	const translator = new Translator();
 
-	const prelude = ['global _start', '_start:', 'mov ebp, esp'];
-	const coda = ['mov ebx, eax', 'mov eax, 1','int 0x80', '', 'section .data:', 'char:', 'dd 0'];
+	for (const expr of program)
+		translator.compile_expr(expr);
 
-	return [...prelude, ...(program.flatMap(expr => translator.compile_expr(expr))), ...coda].join('\n');
+	return [
+		'extern __alloc_init',
+		'extern __allocate',
+		'extern __deallocate',
+		'extern __debexit',
+		...Object.values(nativeMap).map(name => `extern __${name}`),
+		'',
+		'global _start',
+		'_start:',
+		'mov ebp, esp',
+		'call __alloc_init',
+		...translator.asm,
+		'call __debexit',
+		'',
+		'section .data',
+		...translator.data
+	].join('\n');
 }

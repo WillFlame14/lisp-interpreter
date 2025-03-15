@@ -1,5 +1,6 @@
 node_modules
-output
+out.s
+*.o
 dist
 *.tgz
 .eslintcache

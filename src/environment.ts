@@ -28,6 +28,17 @@ export class TranslatorEnv extends Environment<number | string> {
 	local_vars = 0;
 	params = -1;
 
+	constructor(enclosing?: TranslatorEnv, copy = false) {
+		super(enclosing);
+
+		if (enclosing !== undefined && copy) {
+			this.local_vars = enclosing.local_vars;
+			this.params = enclosing.params;
+			this.symbolMap = {...enclosing.symbolMap};
+		}
+
+	}
+
 	bind(key: string, local: boolean) {
 		const index = local ? this.local_vars : this.params;
 		this.symbolMap[key] = index;

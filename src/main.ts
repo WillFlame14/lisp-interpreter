@@ -33,8 +33,8 @@ function runFile(path: string) {
 		process.exit(70);
 
 	if (program !== undefined) {
-		const native = fs.readFileSync('src/native.asm', 'utf8');
-		fs.writeFileSync('output/out.s', native + '\n\n' + compile(program));
+		// const native = fs.readFileSync('src/native.asm', 'utf8');
+		fs.writeFileSync('output/out.s', compile(program));
 
 		execFile('./assemble.sh', (_error, stdout, _stderr) => {
 			console.dir(stdout);
@@ -63,7 +63,7 @@ function run(source: string) {
 
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
-	interpret(program);
+	// interpret(program);
 
 	return program;
 }
