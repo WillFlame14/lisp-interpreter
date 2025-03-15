@@ -1,5 +1,6 @@
 node_modules
 out.s
+output/main
 *.o
 dist
 *.tgz

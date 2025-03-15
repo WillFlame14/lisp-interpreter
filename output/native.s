@@ -4,140 +4,141 @@ extern __deallocate
 
 global __plus
 __plus:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+12]
-	mov ebx, [ebp+8]
-	add eax, ebx
-	pop ebp
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+24]
+	mov rbx, [rbp+16]
+	add rax, rbx
+	pop rbp
 	ret
 
 global __minus
 __minus:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+12]
-	mov ebx, [ebp+8]
-	sub eax, ebx
-	pop ebp
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+24]
+	mov rbx, [rbp+16]
+	sub rax, rbx
+	pop rbp
 	ret
 
 global __eq
 __eq:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+12]
-	mov ebx, [ebp+8]
-	cmp eax, ebx
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+24]
+	mov rbx, [rbp+16]
+	cmp rax, rbx
 	sete al
-	movzx eax, al
-	pop ebp
+	movzx rax, al
+	pop rbp
 	ret
 
 global __cons
 __cons:
-	push ebp
-	mov ebp, esp
-	mov eax, 8
-	push eax
+	push rbp
+	mov rbp, rsp
+	mov rax, 16
+	push rax
 	call __allocate
-	add esp, 4
-	mov ecx, [ebp+12]	; item
-	mov [eax], ecx
-	mov ebx, [ebp+8]	; list
-	mov [eax+4], ebx
-	pop ebp
+	add rsp, 4
+	mov rcx, [rbp+24]	; item
+	mov [rax], rcx
+	mov rbx, [rbp+16]	; list
+	mov [rax+4], rbx
+	pop rbp
 	ret
 
 global __peek
 __peek:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+8]
-	mov eax, [eax]
-	pop ebp
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+16]
+	mov rax, [rax]
+	pop rbp
 	ret
 
 global __pop
 __pop:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+8]
-	mov ebx, [eax+4]	; new head
-	push ebx
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+16]
+	mov rbx, [rax+4]	; new head
+	push rbx
 	call __deallocate	; dealloc head
-	pop eax
-	pop ebp
+	pop rax
+	pop rbp
 	ret
 
 global __nth
 __nth:
-	push ebp
-	mov ebp, esp
-	mov eax, [ebp+12]	; head (curr)
-	mov ebx, [ebp+8]	; i
+	push rbp
+	mov rbp, rsp
+	mov rax, [rbp+24]	; head (curr)
+	mov rbx, [rbp+16]	; i
 nth_loop:
-	cmp ebx, 0
+	cmp rbx, 0
 	je nth_peek
-	sub ebx, 1
-	mov eax, [eax+4]
+	sub rbx, 1
+	mov rax, [rax+4]
 	jmp nth_loop
 nth_peek:
-	mov eax, [eax]
-	pop ebp
+	mov rax, [rax]
+	pop rbp
 	ret
 
 global __count
 __count:
-	push ebp
-	mov ebp, esp
-	mov ebx, [ebp+8]	; head (curr)
-	mov eax, 0 			; counter
+	push rbp
+	mov rbp, rsp
+	mov rbx, [rbp+16]	; head (curr)
+	mov rax, 0 			; counter
 count_loop:
-	cmp ebx, 0
+	cmp rbx, 0
 	je counted
-	mov ebx, [ebx+4]
-	inc eax
+	mov rbx, [rbx+4]
+	inc rax
 	jmp count_loop
 counted:
-	pop ebp
+	pop rbp
 	ret
 
-; Outputs the low-order byte of eax to standard output.
+; Outputs the low-order byte of rax to standard output.
+; Broken in 64-bit, need to look at syscalls again.
 global __nativeWrite
 __nativeWrite:
-	push ebx       ; callee save ebx
+	push rbx       ; callee save rbx
 	mov [char], al ; save the low order byte in memory
-	mov eax, 4     ; sys_write system call
-	mov ecx, char  ; address of bytes to write
-	mov ebx, 1     ; stdout
-	mov edx, 1     ; number of bytes to write
-	int 0x80
-	mov eax, 0     ; return 0
-	pop ebx        ; restore ebx
+	mov rax, 4     ; sys_write system call
+	mov rcx, char  ; address of bytes to write
+	mov rbx, 1     ; stdout
+	mov rdx, 1     ; number of bytes to write
+	syscall
+	mov rax, 0     ; return 0
+	pop rbx        ; restore rbx
 	ret
 
-; Allocates eax bytes of memory. Pointer to allocated memory returned in eax.
+; Allocates rax bytes of memory. Pointer to allocated memory returned in rax.
 global malloc
 malloc:
-	push ebx     ; callee save ebx
-	push eax
-	mov eax, 45  ; sys_brk system call
-	mov ebx, 0   ; 0 bytes - query current brk
-	int 0x80
-	pop ebx
-	push eax
-	add ebx, eax ; move brk ahead by number of bytes requested
-	mov eax, 45  ; sys_brk system call
-	int 0x80
-	pop ebx
-	cmp eax, 0   ; on error, exit with code 22
+	push rbx     ; callee save rbx
+	push rax
+	mov rax, 45  ; sys_brk system call
+	mov rbx, 0   ; 0 bytes - query current brk
+	syscall
+	pop rbx
+	push rax
+	add rbx, rax ; move brk ahead by number of bytes requested
+	mov rax, 45  ; sys_brk system call
+	syscall
+	pop rbx
+	cmp rax, 0   ; on error, exit with code 22
 	jne ok
-	mov eax, 22
+	mov rax, 22
 	call __debexit
 ok:
-	mov eax, ebx
-	pop ebx      ; restore ebx
+	mov rax, rbx
+	pop rbx      ; restore rbx
 	ret
 
 section .data

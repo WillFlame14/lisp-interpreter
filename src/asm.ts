@@ -12,18 +12,31 @@ const nativeMap = {
 	count: 'count'
 };
 
-const INTEGER_SHIFT = 2;
-const encodeInt = (value: number) => value << INTEGER_SHIFT;
-const isInt = (value: number) => (value & 0x11) === 0;
-const decodeInt = (value: number) => value >> INTEGER_SHIFT;
+const IMMEDIATE_MASK = 0b111111;
+
+const INT_MASK = 0b00;
+const BOOL_MASK = 0b01;
+const NIL_MASK = 0b10;
+const CLOSURE_MASK = 0b11;
+
+const encodeInt = (value: number) => value << 2;
+const isInt = (value: number) => (value & 0b11) === INT_MASK;
+const decodeInt = (value: number) => value >> 2;
+
+const encodeBool = (value: boolean) => ((value ? 1 : 0) << 2) | 1;
+const isBool = (value: number) => (value & 0b11) === BOOL_MASK;
+const decodeBool = (value: number) => value >> 2;
+
+const encodeClosure = (value: number) => value | 0b10;
+const isClosure = (value: number) => (value & 0b11) === CLOSURE_MASK;
 
 const NULL = 0;
 
 function format_mem(register: string, index: number) {
 	if (index >= 0)
-		return `[${register}-${4*(index + 1)}]`;
+		return `[${register}-${8*(index + 1)}]`;
 
-	return `[${register}+${-4*(index - 1)}]`;
+	return `[${register}+${-8*(index - 1)}]`;
 }
 
 class Translator {
@@ -33,21 +46,22 @@ class Translator {
 	asm: string[] = [];
 	data: string[] = [];
 
+	defined_closure = false;
 	closure: string | undefined = undefined;
 
-	getLabel() {
+	getId() {
 		this.id++;
-		return `label_${this.id}`;
+		return this.id;
 	}
 
 	compile_literal(expr: LiteralExpr) {
 		if (typeof expr.value === 'number') {
-			this.asm.push(`mov eax, ${expr.value}`);
+			this.asm.push(`mov rax, ${expr.value}`);
 			return;
 		}
 
 		if (typeof expr.value === 'boolean') {
-			this.asm.push(`mov eax, ${expr.value ? 1 : 0}`);
+			this.asm.push(`mov rax, ${expr.value ? 1 : 0}`);
 			return;
 		}
 
@@ -56,16 +70,16 @@ class Translator {
 
 	compile_symbol(expr: SymbolExpr) {
 		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov eax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`);
+			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`);
 			return;
 		}
 
 		const entry = this.env.retrieve(expr.name);
 
 		if (typeof entry === 'number')
-			this.asm.push(`mov eax, ${format_mem('ebp', entry)}`);
+			this.asm.push(`mov rax, ${format_mem('rbp', entry)}`);
 		else
-			this.asm.push(`mov eax, ${entry}`);
+			this.asm.push(`mov rax, ${entry}`);
 	}
 
 	compile_primary(expr: PrimaryExpr) {
@@ -80,47 +94,47 @@ class Translator {
 	compile_list(expr: ListExpr) {
 		for (const child of expr.children) {
 			this.compile_primary(child);
-			this.asm.push('push eax');
+			this.asm.push('push rax');
 		}
 
 		for (let i = 0; i < expr.children.length; i++) {
 			this.asm.push(
-				'mov eax, 8',
+				'mov rax, 8',
 				'call __allocate',
-				...(i === 0 ? [] : ['pop ecx']),					// pop 'next' ptr into ecx
-				'pop ebx',
-				'mov [eax], ebx',									// value
-				`mov [eax+4], ${i === 0 ? `word ${NULL}` : 'ecx'}`,	// next pointer (NULL if tail, otherwise ecx)
-				'push eax'											// store 'next' on stack
+				...(i === 0 ? [] : ['pop rcx']),					// pop 'next' ptr into rcx
+				'pop rbx',
+				'mov [rax], rbx',									// value
+				`mov [rax+8], ${i === 0 ? `word ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
+				'push rax'											// store 'next' on stack
 			);
 		}
 
-		// Pointer to head of list is stored in eax
-		this.asm.push('add esp, 4');
+		// Pointer to head of list is stored in rax
+		this.asm.push('add rsp, 8');
 	}
 
 	compile_s(expr: SExpr) {
 		// Compute all args and push onto stack
 		for (const child of expr.children) {
 			this.compile_expr(child);
-			this.asm.push('push eax');
+			this.asm.push('push rax');
 		}
 
-		// Determine function in eax, then call it
+		// Determine function in rax, then call it
 		this.compile_expr(expr.op);
 
 		// Insert closure env as first parameter
 
 
-		this.asm.push('call eax', `add esp, ${expr.children.length * 4}`);
+		this.asm.push('call rax', `add rsp, ${expr.children.length * 8}`);
 	}
 
 	compile_if(expr: IfExpr) {
-		const label_true = this.getLabel();
-		const label_after = this.getLabel();
+		const label_true = `label_${this.getId()}`;
+		const label_after = `label_${this.getId()}`;
 
 		this.compile_expr(expr.cond);
-		this.asm.push('cmp eax, 1', `je ${label_true}`);
+		this.asm.push('cmp rax, 1', `je ${label_true}`);
 
 		this.compile_expr(expr.false_child);
 		this.asm.push(`jmp ${label_after}`);
@@ -138,13 +152,18 @@ class Translator {
 
 		for (const { key, value } of expr.bindings) {
 			this.compile_expr(value);
-			this.asm.push('push eax');
+			this.asm.push('push rax');
 			nested.bind(key.lexeme, true);
+
+			if (this.defined_closure) {
+				this.closure = key.lexeme;
+				this.defined_closure = false;
+			}
 		}
 
 		try {
 			this.compile_expr(expr.body);
-			this.asm.push(`add esp, ${nested.local_vars * 4}`);
+			this.asm.push(`add rsp, ${nested.local_vars * 8}`);
 		}
 		finally {
 			this.env = enclosing;
@@ -152,42 +171,45 @@ class Translator {
 	}
 
 	compile_fn(expr: FnExpr) {
-		const label_after = this.getLabel();
-		const label_fn = `USER_${expr.name === undefined ? `anon_${this.getLabel()}` : `named_${expr.name.lexeme}_${this.getLabel()}`}`;
-
-		this.asm.push(
-			`jmp ${label_after}`,
-			`${label_fn}:`,
-			'push ebp',
-			'mov ebp, esp');
+		const label_after = `after_${this.getId()}`;
+		const label_fn = expr.name === undefined ? `anon${this.getId()}` : `named${this.getId()}_${expr.name.lexeme}`;
 
 		const enclosing = this.env;
 		const nested = new TranslatorEnv(enclosing);
 
-		// Insert closure env as first parameter
-		// const keys = Object.keys(enclosing.symbolMap);
-		// for (let i = 0; i < keys.length; i++)
-		// 	nested.define(keys[i], `${i}`);
+		this.data.push(`${label_fn}_closure:`, `dd ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dd 0`));
+		this.defined_closure = true;
 
-		// nested.local_vars++;
+		this.asm.push(
+			...Object.values(enclosing.symbolMap).map((value, i) =>
+				`mov [${label_fn}_closure+${8*(i+1)}], ${typeof value === 'string' ? value : format_mem('rbp', value)}`),
+			`jmp ${label_after}`,
+			`${label_fn}:`,
+			'push rbp',
+			'mov rbp, rsp');
+
+		// Insert closure env as first parameter
+		const keys = Object.keys(enclosing.symbolMap);
+		for (let i = 0; i < keys.length; i++)
+			nested.define(keys[i], `${i}`);
+
+		nested.local_vars++;
 
 		for (const token of expr.params.toReversed())
 			nested.bind(token.lexeme, false);
 
 		// Allow recursion
 		if (expr.name !== undefined)
-			nested.define(expr.name.lexeme, label_fn);
-
-		this.data.push(`${label_fn}_closure:`, ...Object.entries(enclosing.symbolMap).map(([_, value]) => `dd ${value}`));
+			nested.define(expr.name.lexeme, `${label_fn}_closure`);
 
 		try {
 			this.env = nested;
 			this.compile_expr(expr.body);
 			this.asm.push(
-				'pop ebp',
+				'pop rbp',
 				'ret',
 				`${label_after}:`,
-				`mov eax, ${label_fn}`);
+				`mov rax, ${label_fn}_closure`);
 		}
 		finally {
 			this.env = enclosing;
@@ -223,6 +245,10 @@ class Translator {
 	}
 }
 
+function indent(s: string) {
+	return !(s.endsWith(':') || s.startsWith('global') || s.startsWith('extern') || s.startsWith('section') || s.length === 0);
+}
+
 export function compile(program: Expr[]) {
 	const translator = new Translator();
 
@@ -238,12 +264,12 @@ export function compile(program: Expr[]) {
 		'',
 		'global _start',
 		'_start:',
-		'mov ebp, esp',
+		'mov rbp, rsp',
 		'call __alloc_init',
 		...translator.asm,
 		'call __debexit',
 		'',
 		'section .data',
 		...translator.data
-	].join('\n');
+	].map(s => indent(s) ? `\t${s}` : s).join('\n');
 }

@@ -4,6 +4,6 @@ break _start
 layout src
 
 define hook-step
-info reg eax ebx ecx edx
-x/10x $sp
+info reg rax rbx rcx rdx
+x/16x $sp
 end
