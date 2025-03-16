@@ -1,4 +1,5 @@
-import { TranslatorEnv } from './environment.ts';
+import { astPrinter } from './ast.ts';
+import { TEnvVar, TranslatorEnv, VarType } from './environment.ts';
 import { Expr, FnExpr, IfExpr, LetExpr, ListExpr, LiteralExpr, PrimaryExpr, QuoteExpr, SExpr, SymbolExpr } from './expr.ts';
 
 const nativeMap = {
@@ -12,31 +13,43 @@ const nativeMap = {
 	count: 'count'
 };
 
-const IMMEDIATE_MASK = 0b111111;
+const TAG_MASK = 0b111;
 
-const INT_MASK = 0b00;
-const BOOL_MASK = 0b01;
-const NIL_MASK = 0b10;
-const CLOSURE_MASK = 0b11;
-
-const encodeInt = (value: number) => value << 2;
-const isInt = (value: number) => (value & 0b11) === INT_MASK;
-const decodeInt = (value: number) => value >> 2;
-
-const encodeBool = (value: boolean) => ((value ? 1 : 0) << 2) | 1;
-const isBool = (value: number) => (value & 0b11) === BOOL_MASK;
-const decodeBool = (value: number) => value >> 2;
-
-const encodeClosure = (value: number) => value | 0b10;
-const isClosure = (value: number) => (value & 0b11) === CLOSURE_MASK;
+const NIL_MASK = 0b000;
+const BOOL_MASK = 0b001;
+const INT_MASK = 0b010;
+const CLOSURE_MASK = 0b011;
 
 const NULL = 0;
+
+const REGISTER_PARAMS = ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9'] as const;
 
 function format_mem(register: string, index: number) {
 	if (index >= 0)
 		return `[${register}-${8*(index + 1)}]`;
 
 	return `[${register}+${-8*(index - 1)}]`;
+}
+
+function get_mem(value: TEnvVar) {
+	switch (value.type) {
+		case VarType.LOCAL:
+			return `[rbp-${8*(value.index + 1)}]`;
+
+		case VarType.PARAM:
+			if (value.index <= 5)	// param stored in register (but closure is always first param)
+				return REGISTER_PARAMS[value.index + 1];
+
+			// Need an extra offset to start at beginning of value
+			return `[rbp+${8*(value.index + 2 - 6)}]`;
+
+		case VarType.CLOSURE:
+			// Need an extra offset since function is always first var in closure
+			return `[rdi+${8*(value.index + 1)}]`;
+
+		case VarType.FUNC:
+			return value.label;
+	}
 }
 
 class Translator {
@@ -46,9 +59,6 @@ class Translator {
 	asm: string[] = [];
 	data: string[] = [];
 
-	defined_closure = false;
-	closure: string | undefined = undefined;
-
 	getId() {
 		this.id++;
 		return this.id;
@@ -56,12 +66,12 @@ class Translator {
 
 	compile_literal(expr: LiteralExpr) {
 		if (typeof expr.value === 'number') {
-			this.asm.push(`mov rax, ${expr.value}`);
+			this.asm.push(`mov rax, ${(expr.value << 3) | INT_MASK}`);
 			return;
 		}
 
 		if (typeof expr.value === 'boolean') {
-			this.asm.push(`mov rax, ${expr.value ? 1 : 0}`);
+			this.asm.push(`mov rax, ${((expr.value ? 1 : 0) << 3) | BOOL_MASK}`);
 			return;
 		}
 
@@ -70,16 +80,12 @@ class Translator {
 
 	compile_symbol(expr: SymbolExpr) {
 		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}`);
+			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`);
 			return;
 		}
 
 		const entry = this.env.retrieve(expr.name);
-
-		if (typeof entry === 'number')
-			this.asm.push(`mov rax, ${format_mem('rbp', entry)}`);
-		else
-			this.asm.push(`mov rax, ${entry}`);
+		this.asm.push(`mov rax, ${get_mem(entry)}`);
 	}
 
 	compile_primary(expr: PrimaryExpr) {
@@ -99,12 +105,12 @@ class Translator {
 
 		for (let i = 0; i < expr.children.length; i++) {
 			this.asm.push(
-				'mov rax, 8',
+				'mov rax, 16',
 				'call __allocate',
 				...(i === 0 ? [] : ['pop rcx']),					// pop 'next' ptr into rcx
 				'pop rbx',
 				'mov [rax], rbx',									// value
-				`mov [rax+8], ${i === 0 ? `word ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
+				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
 				'push rax'											// store 'next' on stack
 			);
 		}
@@ -120,13 +126,23 @@ class Translator {
 			this.asm.push('push rax');
 		}
 
-		// Determine function in rax, then call it
+		// Get closure in rax
 		this.compile_expr(expr.op);
 
-		// Insert closure env as first parameter
+		// Pass closure as first param
+		this.asm.push(`mov ${REGISTER_PARAMS[0]}, rax`);
 
+		// Pop remaining arguments into the param registers (leave rest on stack)
+		for (let i = 0; i < Math.min(REGISTER_PARAMS.length - 1, expr.children.length); i++)
+			this.asm.push(`pop ${REGISTER_PARAMS[i + 1]}`);
 
-		this.asm.push('call rax', `add rsp, ${expr.children.length * 8}`);
+		// Call function
+		this.asm.push('call [rax]');
+
+		const stack_params = expr.children.length - (REGISTER_PARAMS.length - 1);
+
+		if (stack_params > 0)
+			this.asm.push(`add rsp, ${stack_params * 8}`);
 	}
 
 	compile_if(expr: IfExpr) {
@@ -146,24 +162,19 @@ class Translator {
 
 	compile_let(expr: LetExpr) {
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing, true);
+		const nested = new TranslatorEnv(enclosing);
 
 		this.env = nested;
 
 		for (const { key, value } of expr.bindings) {
 			this.compile_expr(value);
 			this.asm.push('push rax');
-			nested.bind(key.lexeme, true);
-
-			if (this.defined_closure) {
-				this.closure = key.lexeme;
-				this.defined_closure = false;
-			}
+			nested.bind(key.lexeme, VarType.LOCAL);
 		}
 
 		try {
 			this.compile_expr(expr.body);
-			this.asm.push(`add rsp, ${nested.local_vars * 8}`);
+			this.asm.push(`add rsp, ${nested.tracker[VarType.LOCAL] * 8}`);
 		}
 		finally {
 			this.env = enclosing;
@@ -177,30 +188,30 @@ class Translator {
 		const enclosing = this.env;
 		const nested = new TranslatorEnv(enclosing);
 
-		this.data.push(`${label_fn}_closure:`, `dd ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dd 0`));
-		this.defined_closure = true;
+		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dq 0`));
 
 		this.asm.push(
-			...Object.values(enclosing.symbolMap).map((value, i) =>
-				`mov [${label_fn}_closure+${8*(i+1)}], ${typeof value === 'string' ? value : format_mem('rbp', value)}`),
+			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
+				if (symbol.type === VarType.FUNC)
+					return [`mov [${label_fn}_closure+${8*(i+1)}], ${symbol.label}`];
+				else
+					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+			}),
 			`jmp ${label_after}`,
 			`${label_fn}:`,
 			'push rbp',
 			'mov rbp, rsp');
 
-		// Insert closure env as first parameter
-		const keys = Object.keys(enclosing.symbolMap);
-		for (let i = 0; i < keys.length; i++)
-			nested.define(keys[i], `${i}`);
-
-		nested.local_vars++;
+		// Set up closure vars
+		for (const key of Object.keys(enclosing.symbolMap))
+			nested.bind(key, VarType.CLOSURE);
 
 		for (const token of expr.params.toReversed())
-			nested.bind(token.lexeme, false);
+			nested.bind(token.lexeme, VarType.PARAM);
 
 		// Allow recursion
 		if (expr.name !== undefined)
-			nested.define(expr.name.lexeme, `${label_fn}_closure`);
+			nested.bind(expr.name.lexeme, VarType.FUNC, `${label_fn}_closure`);
 
 		try {
 			this.env = nested;
@@ -260,13 +271,14 @@ export function compile(program: Expr[]) {
 		'extern __allocate',
 		'extern __deallocate',
 		'extern __debexit',
-		...Object.values(nativeMap).map(name => `extern __${name}`),
+		...Object.values(nativeMap).map(name => `extern __${name}_closure`),
 		'',
 		'global _start',
 		'_start:',
 		'mov rbp, rsp',
 		'call __alloc_init',
 		...translator.asm,
+		'shr rax, 3',		// output int type
 		'call __debexit',
 		'',
 		'section .data',

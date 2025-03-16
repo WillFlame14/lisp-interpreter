@@ -24,28 +24,33 @@ export class Environment<T> {
 	}
 }
 
-export class TranslatorEnv extends Environment<number | string> {
-	local_vars = 0;
-	params = -1;
+export enum VarType {
+	LOCAL = 'LOCAL', PARAM = 'PARAM', CLOSURE = 'CLOSURE', FUNC = 'FUNC'
+}
 
-	constructor(enclosing?: TranslatorEnv, copy = false) {
-		super(enclosing);
+export type TEnvVar = { type: VarType.LOCAL, index: number } |
+			{ type: VarType.PARAM, index: number } |
+			{ type: VarType.CLOSURE, index: number } |
+			{ type: VarType.FUNC, label: string };
 
-		if (enclosing !== undefined && copy) {
-			this.local_vars = enclosing.local_vars;
-			this.params = enclosing.params;
-			this.symbolMap = {...enclosing.symbolMap};
+export class TranslatorEnv extends Environment<TEnvVar> {
+	tracker = {
+		[VarType.LOCAL]: 0,
+		[VarType.PARAM]: 0,
+		[VarType.CLOSURE]: 0
+	};
+
+	bind(key: string, type: VarType, label?: string) {
+		if (type === VarType.FUNC) {
+			if (label === undefined)
+				throw new Error('Cannot bind env function without label!');
+
+			this.symbolMap[key] = { type, label: label };
+			return;
 		}
 
-	}
-
-	bind(key: string, local: boolean) {
-		const index = local ? this.local_vars : this.params;
-		this.symbolMap[key] = index;
-
-		if (local)
-			this.local_vars++;
-		else
-			this.params--;
+		const index = this.tracker[type];
+		this.symbolMap[key] = { type, index };
+		this.tracker[type]++;
 	}
 }

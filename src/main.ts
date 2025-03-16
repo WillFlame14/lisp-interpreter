@@ -21,7 +21,7 @@ function main() {
 }
 
 function runFile(path: string) {
-	console.log(`Interpreting file ${path}`);
+	console.log(`Compiling file ${path}`);
 
 	const source = fs.readFileSync(path, 'utf8');
 	const program = run(source);
