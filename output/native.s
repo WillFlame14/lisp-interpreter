@@ -23,19 +23,26 @@ __toBool:
 	or rax, 1
 	ret
 
-; closure is always the first param
-; final param is at rbp+16, previous are at rbp+24, rbp+32, ...
+global __removeTag
+__removeTag:
+	shr rax, 3
+	shl rax, 3
+	ret
 
 __plus:
+	shr rsi, 3
+	shr rdx, 3
+	add rsi, rdx
 	mov rax, rsi
-	mov rbx, rdx
-	add rax, rbx
+	call __toInt
 	ret
 
 __minus:
+	shr rsi, 3
+	shr rdx, 3
+	sub rsi, rdx
 	mov rax, rsi
-	mov rbx, rdx
-	sub rax, rbx
+	call __toInt
 	ret
 
 __eq:
@@ -49,23 +56,22 @@ __eq:
 
 __cons:
 	mov rax, 16
-	push rax
+	push rsi			; save params before calling allocate
+	push rdx
 	call __allocate
-	add rsp, 4
-	mov rcx, rsi	; item
-	mov [rax], rcx
-	mov rbx, rdx	; list
-	mov [rax+4], rbx
+	pop rdx
+	pop rsi
+	mov [rax], rsi		; item
+	mov [rax+8], rdx 	; list
 	ret
 
 __peek:
-	mov rax, rdi
-	mov rax, [rax]
+	mov rax, [rsi]
 	ret
 
 __pop:
 	mov rax, rsi
-	mov rbx, rdx	; new head
+	mov rbx, [rsi+8]	; new head
 	push rbx
 	call __deallocate	; dealloc head
 	pop rax
@@ -100,12 +106,13 @@ counted:
 
 ; Outputs the low-order byte of rax to standard output.
 ; Broken in 64-bit, need to look at syscalls again.
+global __nativeWrite
 __nativeWrite:
 	push rbx       ; callee save rbx
 	mov [char], al ; save the low order byte in memory
-	mov rax, 4     ; sys_write system call
-	mov rcx, char  ; address of bytes to write
-	mov rbx, 1     ; stdout
+	mov rax, 1     ; sys_write system call
+	mov rsi, char  ; address of bytes to write
+	mov rdi, 1     ; stdout
 	mov rdx, 1     ; number of bytes to write
 	syscall
 	mov rax, 0     ; return 0
@@ -134,6 +141,16 @@ ok:
 	pop rbx      ; restore rbx
 	ret
 
+global __error
+__error:
+	mov rax, 1     ; sys_write system call
+	mov rsi, err_msg  ; address of bytes to write
+	mov rdi, 1     ; stdout
+	mov rdx, 17     ; number of bytes to write
+	syscall
+	mov rax, 1
+	call __debexit
+
 global __plus_closure
 global __minus_closure
 global __eq_closure
@@ -146,6 +163,9 @@ global __count_closure
 section .data
 	char: dd 0
 
+	err_msg: dw "Encountered error"
+
+	ALIGN 8
 	__plus_closure: dq __plus
 	__minus_closure: dq __minus
 	__eq_closure: dq __eq

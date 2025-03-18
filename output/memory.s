@@ -13,6 +13,7 @@ __alloc_init:
 	pop rbp
 	ret
 
+; clobbers rcx, rax, rdi, rdx
 global __allocate
 __allocate:
 	push rbp

@@ -40,6 +40,13 @@ export class TranslatorEnv extends Environment<TEnvVar> {
 		[VarType.CLOSURE]: 0
 	};
 
+	constructor(enclosing?: TranslatorEnv, copy = false) {
+		super(enclosing);
+
+		if (copy)
+			this.tracker = enclosing?.tracker ?? this.tracker;
+	}
+
 	bind(key: string, type: VarType, label?: string) {
 		if (type === VarType.FUNC) {
 			if (label === undefined)

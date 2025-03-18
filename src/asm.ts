@@ -31,24 +31,25 @@ function format_mem(register: string, index: number) {
 	return `[${register}+${-8*(index - 1)}]`;
 }
 
-function get_mem(value: TEnvVar) {
+function get_mem(register: string, value: TEnvVar) {
 	switch (value.type) {
 		case VarType.LOCAL:
-			return `[rbp-${8*(value.index + 1)}]`;
+			return [`mov ${register}, [rbp-${8*(value.index + 1)}]`];
 
 		case VarType.PARAM:
 			if (value.index <= 5)	// param stored in register (but closure is always first param)
-				return REGISTER_PARAMS[value.index + 1];
+				return [`mov ${register}, ${REGISTER_PARAMS[value.index + 1]}`];
 
 			// Need an extra offset to start at beginning of value
-			return `[rbp+${8*(value.index + 2 - 6)}]`;
+			return [`mov ${register}, [rbp+${8*(value.index + 2 - 6)}]`];
 
 		case VarType.CLOSURE:
 			// Need an extra offset since function is always first var in closure
-			return `[rdi+${8*(value.index + 1)}]`;
+			return [`mov rax, rdi`, `call __removeTag`, `mov ${register}, [rax+${8*(value.index + 1)}]`];
 
 		case VarType.FUNC:
-			return value.label;
+			// apply closure tag
+			return [`mov ${register}, ${value.label}`, `or ${register}, 3`];
 	}
 }
 
@@ -80,12 +81,12 @@ class Translator {
 
 	compile_symbol(expr: SymbolExpr) {
 		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`);
+			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `or rax, 3`);
 			return;
 		}
 
 		const entry = this.env.retrieve(expr.name);
-		this.asm.push(`mov rax, ${get_mem(entry)}`);
+		this.asm.push(...get_mem('rax', entry));
 	}
 
 	compile_primary(expr: PrimaryExpr) {
@@ -98,6 +99,18 @@ class Translator {
 	}
 
 	compile_list(expr: ListExpr) {
+		if (expr.children.length === 0) {
+			this.asm.push(`mov rax, dword ${NULL}`);
+			return;
+		}
+
+		const save_reg_params = Math.min(4, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
+
+		// Save first 4 register params if needed
+		for (let i = 0; i < save_reg_params; i++)
+			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
+
+		// Compute children and push onto stack
 		for (const child of expr.children) {
 			this.compile_primary(child);
 			this.asm.push('push rax');
@@ -111,15 +124,26 @@ class Translator {
 				'pop rbx',
 				'mov [rax], rbx',									// value
 				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
-				'push rax'											// store 'next' on stack
 			);
+
+			if (i < expr.children.length - 1)
+				this.asm.push('push rax');											// store 'next' on stack
 		}
 
+		// Restore register params
+		for (let i = 0; i < save_reg_params; i++)
+			this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
+
 		// Pointer to head of list is stored in rax
-		this.asm.push('add rsp, 8');
 	}
 
 	compile_s(expr: SExpr) {
+		const save_reg_params = 1 + Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
+
+		// Save first 4 register params if needed
+		for (let i = 0; i < save_reg_params; i++)
+			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
+
 		// Compute all args and push onto stack
 		for (const child of expr.children) {
 			this.compile_expr(child);
@@ -129,20 +153,33 @@ class Translator {
 		// Get closure in rax
 		this.compile_expr(expr.op);
 
+		// this.asm.push(
+		// 	'mov rbx, 7',
+		// 	'and rbx, rax',
+		// 	'cmp rbx, 3',
+		// 	'jne __error',		// confirm that rax holds a closure
+		// );
+
 		// Pass closure as first param
 		this.asm.push(`mov ${REGISTER_PARAMS[0]}, rax`);
 
+		const reg_params = Math.min(REGISTER_PARAMS.length - 1, expr.children.length);
+
 		// Pop remaining arguments into the param registers (leave rest on stack)
-		for (let i = 0; i < Math.min(REGISTER_PARAMS.length - 1, expr.children.length); i++)
-			this.asm.push(`pop ${REGISTER_PARAMS[i + 1]}`);
+		for (let i = 0; i < reg_params; i++)
+			this.asm.push(`pop ${REGISTER_PARAMS[reg_params - i]}`);
 
 		// Call function
-		this.asm.push('call [rax]');
+		this.asm.push('call __removeTag', 'call [rax]');
 
 		const stack_params = expr.children.length - (REGISTER_PARAMS.length - 1);
 
 		if (stack_params > 0)
 			this.asm.push(`add rsp, ${stack_params * 8}`);
+
+		// Restore register params
+		for (let i = 0; i < save_reg_params; i++)
+			this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
 	}
 
 	compile_if(expr: IfExpr) {
@@ -150,7 +187,7 @@ class Translator {
 		const label_after = `label_${this.getId()}`;
 
 		this.compile_expr(expr.cond);
-		this.asm.push('cmp rax, 1', `je ${label_true}`);
+		this.asm.push('cmp rax, 9', `je ${label_true}`);	// true is tagged 1001 (9 in decimal)
 
 		this.compile_expr(expr.false_child);
 		this.asm.push(`jmp ${label_after}`);
@@ -162,7 +199,7 @@ class Translator {
 
 	compile_let(expr: LetExpr) {
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing);
+		const nested = new TranslatorEnv(enclosing, true);
 
 		this.env = nested;
 
@@ -193,7 +230,7 @@ class Translator {
 		this.asm.push(
 			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
 				if (symbol.type === VarType.FUNC)
-					return [`mov [${label_fn}_closure+${8*(i+1)}], ${symbol.label}`];
+					return [`mov rax, ${symbol.label}`, `or rax, 3`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
 				else
 					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
 			}),
@@ -206,7 +243,7 @@ class Translator {
 		for (const key of Object.keys(enclosing.symbolMap))
 			nested.bind(key, VarType.CLOSURE);
 
-		for (const token of expr.params.toReversed())
+		for (const token of expr.params)
 			nested.bind(token.lexeme, VarType.PARAM);
 
 		// Allow recursion
@@ -220,7 +257,9 @@ class Translator {
 				'pop rbp',
 				'ret',
 				`${label_after}:`,
-				`mov rax, ${label_fn}_closure`);
+				`mov rax, ${label_fn}_closure`,
+				`or rax, 3`
+			);
 		}
 		finally {
 			this.env = enclosing;
@@ -271,6 +310,8 @@ export function compile(program: Expr[]) {
 		'extern __allocate',
 		'extern __deallocate',
 		'extern __debexit',
+		'extern __error',
+		'extern __removeTag',
 		...Object.values(nativeMap).map(name => `extern __${name}_closure`),
 		'',
 		'global _start',
@@ -282,6 +323,7 @@ export function compile(program: Expr[]) {
 		'call __debexit',
 		'',
 		'section .data',
+		'ALIGN 8',
 		...translator.data
 	].map(s => indent(s) ? `\t${s}` : s).join('\n');
 }
