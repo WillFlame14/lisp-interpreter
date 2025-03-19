@@ -1,1 +1,1 @@
-(count (cons 5 (quote (2))))
+(print (count (cons 5 (quote (2)))))

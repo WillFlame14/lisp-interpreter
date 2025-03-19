@@ -23,6 +23,11 @@ __toBool:
 	or rax, 1
 	ret
 
+__toList:
+	shl rax, 3
+	or rax, 4
+	ret
+
 global __removeTag
 __removeTag:
 	shr rax, 3
@@ -56,6 +61,7 @@ __eq:
 
 __cons:
 	mov rax, 16
+	shr rdx, 3 			; remove list tag
 	push rsi			; save params before calling allocate
 	push rdx
 	call __allocate
@@ -63,26 +69,31 @@ __cons:
 	pop rsi
 	mov [rax], rsi		; item
 	mov [rax+8], rdx 	; list
+	call __toList
 	ret
 
 __peek:
+	shr rsi, 3 			; remove list tag
 	mov rax, [rsi]
 	ret
 
 __pop:
+	shr rsi, 3 			; remove list tag
 	mov rax, rsi
 	mov rbx, [rsi+8]	; new head
 	push rbx
 	call __deallocate	; dealloc head
 	pop rax
+	call __toList
 	ret
 
 __nth:
+	shr rsi, 3 		; remove list tag
 	mov rax, rsi	; head (curr)
 	mov rbx, rdx	; i
 	shr rbx, 3		; remove ptr tag
 nth_loop:
-	cmp rbx, 0
+	cmp rbx, 4
 	je nth_peek
 	sub rbx, 1
 	mov rax, [rax+8]
@@ -92,10 +103,11 @@ nth_peek:
 	ret
 
 __count:
+	shr rsi, 3  	; remove list tag
 	mov rbx, rsi	; head (curr)
 	mov rax, 0 		; counter
 count_loop:
-	cmp rbx, 0
+	cmp rbx, 4
 	je counted
 	mov rbx, [rbx+8]
 	inc rax
@@ -135,6 +147,8 @@ __print:
 	je print_int
 	cmp rax, 3
 	je print_fn
+	cmp rax, 4
+	je print_list
 print_nil:
 	mov rsi, nil_msg
 	mov rdx, 3
@@ -186,6 +200,38 @@ print_fn:
 	mov rsi, fn_msg
 	mov rdx, 10
 	call writeString
+	jmp print_end
+print_list:
+	push r12
+	mov r12, rsi 	; store curr in call-preserved r12
+	shr r12, 3 		; remove list tag
+	mov [char], word '('
+	mov rsi, char
+	mov rdx, 1
+	call writeString
+	cmp r12, 4
+	je list_end	; check for empty list
+	mov rsi, [r12]
+	call __print
+	mov r12, [r12+8]
+	cmp r12, 4
+	je list_end	; print first element
+print_link:
+	mov [char], word ' '
+	mov rsi, char
+	mov rdx, 1
+	call writeString
+	mov rsi, [r12]
+	call __print
+	mov r12, [r12+8]
+	cmp r12, 4
+	jne print_link
+list_end:
+	mov [char], word ')'
+	mov rsi, char
+	mov rdx, 1
+	call writeString
+	pop r12
 	jmp print_end
 print_end:
 	mov rax, 0

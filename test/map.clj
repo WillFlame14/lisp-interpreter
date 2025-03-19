@@ -3,4 +3,4 @@
                 (if (empty? list)
                   list
                   (cons (f (peek list)) (rec f (pop list)))))]
-  (nth (replace (fn [x] (+ x 2)) (quote (1 2 3))) 2))
+  (print (replace (fn [x] (+ x 2)) (quote (1 2 3)))))

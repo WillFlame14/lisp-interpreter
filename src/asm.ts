@@ -20,6 +20,7 @@ const NIL_MASK = 0b000;
 const BOOL_MASK = 0b001;
 const INT_MASK = 0b010;
 const CLOSURE_MASK = 0b011;
+const LIST_MASK = 0b100;
 
 const NULL = 0;
 
@@ -101,7 +102,7 @@ class Translator {
 
 	compile_list(expr: ListExpr) {
 		if (expr.children.length === 0) {
-			this.asm.push(`mov rax, dword ${NULL}`);
+			this.asm.push(`mov rax, dword 4`);	// NULL is 0, with list tag 100
 			return;
 		}
 
@@ -124,7 +125,7 @@ class Translator {
 				...(i === 0 ? [] : ['pop rcx']),					// pop 'next' ptr into rcx
 				'pop rbx',
 				'mov [rax], rbx',									// value
-				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
+				`mov [rax+8], ${i === 0 ? `dword 4` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
 			);
 
 			if (i < expr.children.length - 1)
@@ -135,7 +136,8 @@ class Translator {
 		for (let i = 0; i < save_reg_params; i++)
 			this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
 
-		// Pointer to head of list is stored in rax
+		// Pointer to head of list is stored in rax - add list tag
+		this.asm.push('shl rax, 3', 'or rax, 4');
 	}
 
 	compile_s(expr: SExpr) {
