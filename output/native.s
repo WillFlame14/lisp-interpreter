@@ -104,6 +104,100 @@ counted:
 	call __toInt
 	ret
 
+div10:
+	mov rdx, 0xCCCCCCCCCCCCCCCD
+	mov rax, rdi
+	mul rdx
+	mov rax, rdx
+	shr rax, 3
+	ret
+
+mod10:
+	mov rdx, 0xCCCCCCCCCCCCCCCD
+	mov rax, rdi
+	mul rdx
+	shr rdx, 3
+	lea rcx, [rdx+rdx*4]
+	add rcx, rcx
+	sub rdi, rcx
+	mov rax, rdi
+	ret
+
+global __print
+__print:
+	mov rax, 7
+	and rax, rsi
+	cmp rax, 0
+	je print_nil
+	cmp rax, 1
+	je print_bool
+	cmp rax, 2
+	je print_int
+	cmp rax, 3
+	je print_fn
+print_nil:
+	mov rsi, nil_msg
+	mov rdx, 3
+	jmp print_end
+print_bool:
+	shr rsi, 3
+	cmp rsi, 0
+	je print_false
+	mov rsi, true_msg
+	mov rdx, 4
+	call writeString
+	jmp print_end
+print_false:
+	mov rsi, false_msg
+	mov rdx, 5
+	call writeString
+	jmp print_end
+print_int:
+	shr rsi, 3
+	mov rax, rsi
+	push r12
+	push r13
+	mov r12, 0
+get_digit:
+	mov rdi, rax
+	call mod10
+	push rax
+	mov rdi, rsi
+	call div10
+	mov rsi, rax
+	add r12, 1
+	cmp rsi, 0
+	jne get_digit
+	mov r13, r12
+	mov rdx, 1
+print_digit:
+	pop rax
+	add rax, 48
+	mov [char], al	; shift into ascii
+	mov rsi, char
+	call writeString
+	sub r13, 1
+	cmp r13, 0
+	jne print_digit
+	pop r13
+	pop r12
+	jmp print_end
+print_fn:
+	mov rsi, fn_msg
+	mov rdx, 10
+	call writeString
+	jmp print_end
+print_end:
+	mov rax, 0
+	ret
+
+; rsi holds address of bytes, rdx holds number of bytes
+writeString:
+	mov rax, 1     ; sys_write system call
+	mov rdi, 1     ; stdout
+	syscall
+	ret
+
 ; Outputs the low-order byte of rax to standard output.
 ; Broken in 64-bit, need to look at syscalls again.
 global __nativeWrite
@@ -143,10 +237,10 @@ ok:
 
 global __error
 __error:
-	mov rax, 1     ; sys_write system call
-	mov rsi, err_msg  ; address of bytes to write
 	mov rdi, 1     ; stdout
+	mov rsi, err_msg
 	mov rdx, 17     ; number of bytes to write
+	call writeString
 	syscall
 	mov rax, 1
 	call __debexit
@@ -159,10 +253,15 @@ global __peek_closure
 global __pop_closure
 global __nth_closure
 global __count_closure
+global __print_closure
 
 section .data
 	char: dd 0
 
+	nil_msg: dw "nil"
+	true_msg: dw "true"
+	false_msg: dw "false"
+	fn_msg: dw "<function>"
 	err_msg: dw "Encountered error"
 
 	ALIGN 8
@@ -174,3 +273,4 @@ section .data
 	__pop_closure: dq __pop
 	__nth_closure: dq __nth
 	__count_closure: dq __count
+	__print_closure: dq __print

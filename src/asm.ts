@@ -10,7 +10,8 @@ const nativeMap = {
 	pop: 'pop',
 	nth: 'nth',
 	cons: 'cons',
-	count: 'count'
+	count: 'count',
+	print: 'print'
 };
 
 const TAG_MASK = 0b111;
@@ -319,7 +320,6 @@ export function compile(program: Expr[]) {
 		'mov rbp, rsp',
 		'call __alloc_init',
 		...translator.asm,
-		'shr rax, 3',		// output int type
 		'call __debexit',
 		'',
 		'section .data',
