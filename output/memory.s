@@ -7,7 +7,11 @@ __alloc_init:
 	mov rdi, 0
 	mov rax, SYS_BRK
 	syscall
-	inc rax
+	add rax, 7      ; Add 7 to the register value (so that we always advance)
+	and rax, -8     ; Mask out the last three bits (align to 8)
+	mov rdi, rax
+	mov rax, SYS_BRK
+	syscall
 	mov [heap_begin], rax
 	mov [current_break], rax
 	pop rbp

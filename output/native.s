@@ -13,19 +13,32 @@ extern __deallocate
 ; fn coda
 ; pop rbp
 
-__toInt:
-	shl rax, 3
-	or rax, 2
-	ret
-
+global __toBool
 __toBool:
 	shl rax, 3
 	or rax, 1
 	ret
 
+global __toInt
+__toInt:
+	shl rax, 3
+	or rax, 2
+	ret
+
+global __toClosure
+__toClosure:
+	or rax, 3
+	ret
+
+global __toList
 __toList:
 	shl rax, 3
 	or rax, 4
+	ret
+
+global __toString
+__toString:
+	or rax, 5
 	ret
 
 global __removeTag
@@ -60,10 +73,10 @@ __eq:
 	ret
 
 __cons:
-	mov rax, 16
 	shr rdx, 3 			; remove list tag
 	push rsi			; save params before calling allocate
 	push rdx
+	mov rax, 16
 	call __allocate
 	pop rdx
 	pop rsi

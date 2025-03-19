@@ -21,6 +21,7 @@ const BOOL_MASK = 0b001;
 const INT_MASK = 0b010;
 const CLOSURE_MASK = 0b011;
 const LIST_MASK = 0b100;
+const STRING_MASK = 0b101;
 
 const NULL = 0;
 
@@ -78,12 +79,19 @@ class Translator {
 			return;
 		}
 
+		if (typeof expr.value === 'string') {
+			const string_label = `string${this.getId()}`;
+			this.data.push(`dq ${expr.value.length}`, `${string_label}: dw ${expr.value}`);
+			this.asm.push(`mov rax, ${string_label}`, `call __toString`);
+			return;
+		}
+
 		throw new Error();
 	}
 
 	compile_symbol(expr: SymbolExpr) {
 		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `or rax, 3`);
+			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
 			return;
 		}
 
@@ -137,7 +145,7 @@ class Translator {
 			this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
 
 		// Pointer to head of list is stored in rax - add list tag
-		this.asm.push('shl rax, 3', 'or rax, 4');
+		this.asm.push('call __toList');
 	}
 
 	compile_s(expr: SExpr) {
@@ -233,7 +241,7 @@ class Translator {
 		this.asm.push(
 			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
 				if (symbol.type === VarType.FUNC)
-					return [`mov rax, ${symbol.label}`, `or rax, 3`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
 				else
 					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
 			}),
@@ -261,7 +269,7 @@ class Translator {
 				'ret',
 				`${label_after}:`,
 				`mov rax, ${label_fn}_closure`,
-				`or rax, 3`
+				`call __toClosure`
 			);
 		}
 		finally {
@@ -315,6 +323,11 @@ export function compile(program: Expr[]) {
 		'extern __debexit',
 		'extern __error',
 		'extern __removeTag',
+		'extern __toBool',
+		'extern __toInt',
+		'extern __toClosure',
+		'extern __toList',
+		'extern __toString',
 		...Object.values(nativeMap).map(name => `extern __${name}_closure`),
 		'',
 		'global _start',
