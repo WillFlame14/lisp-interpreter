@@ -133,7 +133,7 @@ class Translator {
 				...(i === 0 ? [] : ['pop rcx']),					// pop 'next' ptr into rcx
 				'pop rbx',
 				'mov [rax], rbx',									// value
-				`mov [rax+8], ${i === 0 ? `dword 4` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
+				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
 			);
 
 			if (i < expr.children.length - 1)

@@ -106,7 +106,7 @@ __nth:
 	mov rbx, rdx	; i
 	shr rbx, 3		; remove ptr tag
 nth_loop:
-	cmp rbx, 4
+	cmp rbx, 0
 	je nth_peek
 	sub rbx, 1
 	mov rax, [rax+8]
@@ -120,7 +120,7 @@ __count:
 	mov rbx, rsi	; head (curr)
 	mov rax, 0 		; counter
 count_loop:
-	cmp rbx, 4
+	cmp rbx, 0
 	je counted
 	mov rbx, [rbx+8]
 	inc rax
@@ -222,12 +222,12 @@ print_list:
 	mov rsi, char
 	mov rdx, 1
 	call writeString
-	cmp r12, 4
+	cmp r12, 0
 	je list_end	; check for empty list
 	mov rsi, [r12]
 	call __print
 	mov r12, [r12+8]
-	cmp r12, 4
+	cmp r12, 0
 	je list_end	; print first element
 print_link:
 	mov [char], word ' '
@@ -237,7 +237,7 @@ print_link:
 	mov rsi, [r12]
 	call __print
 	mov r12, [r12+8]
-	cmp r12, 4
+	cmp r12, 0
 	jne print_link
 list_end:
 	mov [char], word ')'

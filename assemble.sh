@@ -6,4 +6,5 @@ done
 
 ld -o output/main output/*.o # -m elf_i386
 
-./output/main; echo " | exited with code" $?
+./output/main
+#; echo " | exited with code" $?

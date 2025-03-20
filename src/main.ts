@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { execFile } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 import { scanTokens } from './scanner.ts';
 import { parse } from './parser.ts';
@@ -21,10 +21,8 @@ function main() {
 }
 
 function runFile(path: string) {
-	console.log(`Compiling file ${path}`);
-
 	const source = fs.readFileSync(path, 'utf8');
-	const program = run(source);
+	const stdout = run(source);
 
 	if (hadError)
 		process.exit(65);
@@ -32,14 +30,7 @@ function runFile(path: string) {
 	if (hadRuntimeError)
 		process.exit(70);
 
-	if (program !== undefined) {
-		// const native = fs.readFileSync('src/native.asm', 'utf8');
-		fs.writeFileSync('output/out.s', compile(program));
-
-		execFile('./assemble.sh', (_error, stdout, _stderr) => {
-			console.dir(stdout);
-		});
-	}
+	console.dir(stdout);
 }
 
 function prompt() {
@@ -47,12 +38,14 @@ function prompt() {
 
 	const rl = readline.createInterface({ input, output });
 	rl.on('line', (source) => {
-		run(source);
+		const stdout = run(source);
+		console.dir(stdout);
 		hadError = false;
+		hadRuntimeError = false;
 	});
 }
 
-function run(source: string) {
+export function run(source: string) {
 	const tokens = scanTokens(source);
 	const program = parse(tokens);
 
@@ -64,8 +57,16 @@ function run(source: string) {
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
 	// interpret(program);
+	fs.writeFileSync('output/out.s', compile(program));
 
-	return program;
+	try {
+		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+		return proc.stdout.toString();
+	}
+	catch (err) {
+		console.log(err);
+		return;
+	}
 }
 
 export function error(line: number, message: string) {
