@@ -322,6 +322,7 @@ export function compile(program: Expr[]) {
 		'extern __deallocate',
 		'extern __debexit',
 		'extern __error',
+		'extern __exception',
 		'extern __removeTag',
 		'extern __toBool',
 		'extern __toInt',

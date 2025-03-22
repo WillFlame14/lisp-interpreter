@@ -11,13 +11,7 @@ const charTokenMap = {
 const keywordMap = {
 	true: TokenType.TRUE,
 	false: TokenType.FALSE,
-	nil: TokenType.NIL,
-	if: TokenType.IF,
-	fn: TokenType.FN,
-	let: TokenType.LET,
-	loop: TokenType.LOOP,
-	recur: TokenType.RECUR,
-	quote: TokenType.QUOTE
+	nil: TokenType.NIL
 } as const;
 
 export function scanTokens(source: string) {

@@ -1,14 +1,9 @@
-import { Interpreter, RuntimeError, truthy } from './interpreter.ts';
+import { Environment } from './environment.ts';
+import { Callable, RuntimeError, truthy } from './interpreter.ts';
 import { Token } from './token.ts';
-import { LVal, LValBoolean, LValList, LValNil, LValNumber, LValType } from './types.ts';
+import { LVal, LValBoolean, LValList, LValNil, LValNumber, LValSymbol, LValType } from './types.ts';
 
-interface NativeFunc {
-	name: string,
-	arity: number;
-	params: LValType[],
-	params_rest: LValType[],
-	call: (interpreter: Interpreter, args: LVal[], token: Token) => LVal;
-}
+type NativeFunc = Omit<Callable, 'toString'> & { name: string };
 
 const arithmetic_funcs: NativeFunc[] = [
 	{
@@ -16,7 +11,7 @@ const arithmetic_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [],
 		params_rest: [LValType.NUMBER],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			let sum = 0;
 			for (const arg of args)
 				sum += (arg as LValNumber).value;
@@ -29,7 +24,7 @@ const arithmetic_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [],
 		params_rest: [LValType.NUMBER],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			let difference = (args[0] as LValNumber).value;
 
 			for (let i = 1; i < args.length; i++)
@@ -43,10 +38,10 @@ const arithmetic_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [LValType.ANY],
 		params_rest: [LValType.ANY],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			let result = true;
 			for (let i = 1; i < args.length; i++)
-				result &&= args[0].value === args[i].value;
+				result &&= args[0].type === args[i].type && Bun.deepEquals(args[0].value, args[1].value);
 
 			return new LValBoolean(result);
 		}
@@ -56,7 +51,7 @@ const arithmetic_funcs: NativeFunc[] = [
 		arity: 2,
 		params: [LValType.NUMBER, LValType.NUMBER],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			const a = (args[0] as LValNumber).value;
 			const b = (args[1] as LValNumber).value;
 			return new LValNumber(a % b);
@@ -70,7 +65,7 @@ const logical_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [],
 		params_rest: [LValType.ANY],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			if (args.length === 0)
 				return new LValNil();
 
@@ -87,7 +82,7 @@ const logical_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [],
 		params_rest: [LValType.ANY],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			if (args.length === 0)
 				return new LValBoolean(true);
 
@@ -107,7 +102,7 @@ const io_funcs: NativeFunc[] = [
 		arity: -1,
 		params: [],
 		params_rest: [LValType.ANY],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			for (const arg of args)
 				console.log(JSON.stringify(arg));
 
@@ -122,7 +117,7 @@ const list_funcs: NativeFunc[] = [
 		arity: 2,
 		params: [LValType.ANY, LValType.LIST],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			return new LValList([args[0], ...(args[1] as LValList).value]);
 		}
 	},
@@ -131,7 +126,7 @@ const list_funcs: NativeFunc[] = [
 		arity: 1,
 		params: [LValType.LIST],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			return (args[0] as LValList).value[0] ?? new LValNil();
 		}
 	},
@@ -140,7 +135,7 @@ const list_funcs: NativeFunc[] = [
 		arity: 1,
 		params: [LValType.LIST],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[], token: Token) => {
+		call: (_env: Environment<LVal>, args: LVal[], token: Token) => {
 			const list = (args[0] as LValList).value;
 
 			if (list.length === 0)
@@ -154,12 +149,12 @@ const list_funcs: NativeFunc[] = [
 		arity: 2,
 		params: [LValType.LIST, LValType.NUMBER],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[], token: Token) => {
+		call: (_env: Environment<LVal>, args: LVal[], token: Token) => {
 			const list = (args[0] as LValList).value;
 			const index = (args[1] as LValNumber).value;
 
 			if (index < 0 || index >= list.length)
-				throw new RuntimeError(token, `Index out of bounds!`);
+				throw new RuntimeError(token, `nth index out of bounds!`);
 
 			return list[index];
 		}
@@ -169,8 +164,25 @@ const list_funcs: NativeFunc[] = [
 		arity: 1,
 		params: [LValType.LIST],
 		params_rest: [],
-		call: (_interpreter: Interpreter, args: LVal[]) => {
+		call: (_env: Environment<LVal>, args: LVal[]) => {
 			return new LValNumber((args[0] as LValList).value.length);
+		}
+	}
+];
+
+export const native_macros: NativeFunc[] = [
+	{
+		name: 'when',
+		arity: 2,
+		params: [LValType.ANY, LValType.ANY],
+		params_rest: [LValType.ANY],
+		// (defmacro when [test & body] (list 'if test (cons 'do body)))
+		call: (_env: Environment<LVal>, args: LVal[], token: Token) => {
+			const elements: LVal[] = [
+				new LValSymbol({ ...token, lexeme: 'if' }), args[0],
+				new LValList([new LValSymbol({ ...token, lexeme: 'do' }), ...args.slice(1)])];
+
+			return new LValList(elements, token);
 		}
 	}
 ];

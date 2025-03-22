@@ -8,6 +8,7 @@ import { parse } from './parser.ts';
 import { interpret, RuntimeError } from './interpreter.ts';
 import { astPrinter } from './ast.ts';
 import { compile } from './asm.ts';
+import { expandMacro, macroexpand } from './reader.ts';
 
 let hadError = false, hadRuntimeError = false;
 
@@ -56,17 +57,20 @@ export function run(source: string) {
 
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
-	// interpret(program);
-	fs.writeFileSync('output/out.s', compile(program));
+	const expanded = macroexpand(program);
+	console.log(expanded.map(expr => expr.toString()).join('\n'));
 
-	try {
-		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
-		return proc.stdout.toString();
-	}
-	catch (err) {
-		console.log(err);
-		return;
-	}
+	return interpret(expanded)?.toString();
+	// fs.writeFileSync('output/out.s', compile(program));
+
+	// try {
+	// 	const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+	// 	return proc.stdout.toString();
+	// }
+	// catch (err) {
+	// 	console.log(err);
+	// 	return;
+	// }
 }
 
 export function error(line: number, message: string) {

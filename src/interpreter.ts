@@ -1,10 +1,8 @@
-import { astPrinter } from './ast.ts';
 import { Environment } from './environment.ts';
-import { Expr, ExprVisitor, LiteralExpr, SymbolExpr, SExpr, IfExpr, LetExpr, LoopExpr, FnExpr, isExpr, QuoteExpr, ListExpr, PrimaryExpr, RecurExpr } from './expr.ts';
 import { runtimeError } from './main.ts';
 import { native_funcs } from './native.ts';
 import { Token } from './token.ts';
-import { LVal, LValBoolean, LValFunction, LValList, LValNil, LValNumber, LValString, LValSymbol, LValType } from './types.ts';
+import { LVal, LValBoolean, LValFunction, LValList, LValNil, LValNumber, LValString, LValSymbol, LValType, LValVector } from './types.ts';
 
 export class RuntimeError extends Error {
 	token: Token;
@@ -15,180 +13,168 @@ export class RuntimeError extends Error {
 	}
 }
 
-export function truthy (lval: LVal) {
-	return !((lval.type === LValType.BOOLEAN && !lval.value) || lval.type === LValType.NIL);
+export function truthy(lval: LVal) {
+	return !((lval instanceof LValBoolean && !lval.value) || lval instanceof LValNil);
 }
 
-export class Callable {
+export interface Callable {
+	name?: string,
 	arity: number;
 	params: LValType[];
 	params_rest: LValType[];
-	call: (interpreter: Interpreter, args: LVal[], token: Token) => LVal;
+	call: (inner_env: Environment<LVal>, args: LVal[], token: Token) => LVal;
 	toString: string;
-
-	constructor(arity: number, params: LValType[], params_rest: LValType[], call: (interpreter: Interpreter, args: LVal[], token: Token) => LVal, toString: string) {
-		this.arity = arity;
-		this.params = params;
-		this.params_rest = params_rest;
-		this.call = call;
-		this.toString = toString;
-	}
 }
 
-export class Interpreter implements ExprVisitor<LVal> {
-	globals = new Environment<LVal>();
-	env = this.globals;
+function argError(op: LValSymbol, args: LVal[]) {
+	return new RuntimeError(op.value, `Wrong number of args (${args.length}) passed to ${op.value.lexeme}.`);
+}
 
-	constructor() {
-		for (const { name, arity, params, params_rest, call } of native_funcs)
-			this.globals.define(name, new LValFunction(new Callable(arity, params, params_rest, call, '<native fn>'), name));
-	}
+function interpret_if(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
+	if (args.length < 2 || args.length > 3)
+		throw argError(op, args);
 
-	evaluate(expr: Expr): LVal {
-		return expr.accept(this);
-	}
+	const [cond, truthy_expr, falsy_expr = new LValNil()] = args;
+	const condition = interpret_expr(env, cond);
 
-	visitLiteral(expr: LiteralExpr) {
-		if (typeof expr.value === 'string')
-			return new LValString(expr.value);
+	if (truthy(condition))
+		return interpret_expr(env, truthy_expr);
 
-		if (typeof expr.value === 'number')
-			return new LValNumber(expr.value);
+	return interpret_expr(env, falsy_expr);
+}
 
-		if (typeof expr.value === 'boolean')
-			return new LValBoolean(expr.value);
+function interpret_fn(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
+	if (args.length < 2)
+		throw argError(op, args);
 
-		if (expr.value === null)
-			return new LValNil();
+	let name: LValSymbol | undefined;
+	let params: LVal;
+	let body: LVal;
 
-		throw new Error(`Visited literal ${JSON.stringify(expr)} but couldn't interpret it!`);
-	}
+	if (args[0] instanceof LValSymbol)
+		[name, params, body] = args;
+	else
+		[params, body] = args;
 
-	visitSymbol(expr: SymbolExpr) {
-		const value = this.env.retrieve(expr.name);
+	if (!(params instanceof LValVector) || !params.value.every(param => param instanceof LValSymbol))
+		throw new RuntimeError(op.value, 'Expected a vector of symbols.');
 
-		return isExpr(value) ? this.evaluate(value) : value;
-	}
+	const func: Callable = {
+		arity: params.value.length,
+		params: [],
+		params_rest: [],
+		call: (_inner_env: Environment<LVal>, args: LVal[]) => {
+			const nested = new Environment(env);
 
-	visitPrimary(expr: PrimaryExpr) {
-		if (expr instanceof LiteralExpr)
-			return this.visitLiteral(expr);
-
-		if (expr instanceof SymbolExpr)
-			return new LValSymbol(expr.name.lexeme);
-
-		return this.visitList(expr);
-	}
-
-	visitList(expr: ListExpr): LValList {
-		return new LValList(expr.children.map(child => this.visitPrimary(child)));
-	}
-
-	visitSExpr(expr: SExpr) {
-		const func = this.evaluate(expr.op);
-
-		if (!(func instanceof LValFunction))
-			throw new RuntimeError(expr.r_paren, `Unable to convert ${JSON.stringify(func)} to a function.`);
-
-		const { arity, params, params_rest } = func.value;
-
-		const expected_arity = arity === -1 ? expr.children.length : func.value.arity;
-
-		if (expected_arity !== expr.children.length)
-			throw new RuntimeError(expr.r_paren, `Function requires ${expected_arity} parameters, got ${expr.children.length}.`);
-
-		const args = expr.children.map(child => this.evaluate(child));
-
-		if (params.length > 0) {
 			for (let i = 0; i < args.length; i++) {
-				const arg = args[i];
-				const expected_type = params[i] ?? params_rest[(i - params.length) % params_rest.length];
-
-				if (expected_type === LValType.ANY)
-					continue;
-
-				if (arg.type !== expected_type)
-					throw new RuntimeError(expr.r_paren, `Parameter ${i + 1} to function (${JSON.stringify(expr.children[i])}) doesn't match expected type ${expected_type}.`);
+				const param = (params.value[i] as LValSymbol).value.lexeme;
+				nested.define(param, args[i]);
 			}
-		}
 
-		return func.value.call(this, args, expr.r_paren);
-	}
+			if (name !== undefined)
+				env.define(name.value.lexeme, new LValFunction(func, name.value.lexeme));
 
-	visitIf(expr: IfExpr) {
-		return truthy(this.evaluate(expr.cond)) ? this.evaluate(expr.true_child) : this.evaluate(expr.false_child);
-	}
+			return interpret_expr(nested, body);
+		},
+		toString: '<user fn>'
+	};
 
-	visitLet(expr: LetExpr) {
-		const enclosing = this.env;
-		const nested = new Environment(enclosing);
-
-		for (const { key, value } of expr.bindings)
-			nested.define(key.lexeme, this.evaluate(value));
-
-		try {
-			this.env = nested;
-			return this.evaluate(expr.body);
-		}
-		finally {
-			this.env = enclosing;
-		}
-	}
-
-	visitLoop(_expr: LoopExpr) {
-		return undefined as unknown as LVal;
-	}
-
-	visitRecur(_expr: RecurExpr) {
-		return undefined as unknown as LVal;
-	}
-
-	visitFn(expr: FnExpr) {
-		const func = new Callable(
-			expr.params.length,
-			[],
-			[],
-			(interpreter: Interpreter, args: LVal[]) => {
-				const enclosing = this.env;
-				const nested = new Environment(enclosing);
-
-				for (let i = 0; i < args.length; i++) {
-					const param = expr.params[i].lexeme;
-					nested.define(param, args[i]);
-				}
-
-				if (expr.name !== undefined)
-					enclosing.define(expr.name.lexeme, new LValFunction(func, expr.name.lexeme));
-
-				try {
-					interpreter.env = nested;
-					return interpreter.evaluate(expr.body);
-				}
-				finally {
-					interpreter.env = enclosing;
-				}
-			},
-			expr.body.accept(astPrinter)
-		);
-
-		return new LValFunction(func, expr.name?.lexeme);
-	}
-
-	visitQuote(expr: QuoteExpr) {
-		return this.visitPrimary(expr.body);
-	}
+	return new LValFunction(func, name?.value.lexeme);
 }
 
-export function interpret(program: Expr[]) {
-	const interpreter = new Interpreter();
+function interpret_let(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
+	if (args.length !== 2)
+		throw argError(op, args);
+
+	const [bindings, body] = args;
+
+	if (!(bindings instanceof LValVector) || bindings.value.length % 2 !== 0)
+		throw new RuntimeError(op.value, 'Expected an even number of forms in bindings vector.');
+
+	const nested = new Environment(env);
+
+	for (let i = 0; i < bindings.value.length; i += 2) {
+		const symbol = bindings.value[i];
+		const value = interpret_expr(nested, bindings.value[i + 1]);
+
+		if (!(symbol instanceof LValSymbol))
+			throw new RuntimeError(op.value, 'Expected a symbol in bindings vector.');
+
+		nested.define(symbol.value.lexeme, value);
+	}
+
+	return interpret_expr(nested, body);
+}
+
+function interpret_s(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
+	const func = env.retrieve(op.value);
+
+	if (!(func instanceof LValFunction))
+		throw new RuntimeError(op.value, `Symbol ${op.value.lexeme} is not a function.`);
+
+	const evaluated_args = args.map(arg => interpret_expr(env, arg));
+	const result = func.value.call(env, evaluated_args, op.value);
+
+	return result;
+}
+
+function interpret_expr(env: Environment<LVal>, expr: LVal): LVal {
+	if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil)
+		return expr;
+
+	if (expr instanceof LValSymbol)
+		return env.retrieve(expr.value);
+
+	if (expr instanceof LValVector) {
+		expr.value = expr.value.map(e => interpret_expr(env, e));
+		return expr;
+	}
+
+	if (expr instanceof LValList) {
+		const [op, ...args] = expr.value;
+
+		if (op instanceof LValSymbol) {
+			const name = op.value.lexeme;
+
+			if (name === 'quote') {
+				if (args.length !== 1)
+					throw argError(op, args);
+
+				return args[0];
+			}
+
+			if (name === 'if')
+				return interpret_if(env, op, args);
+
+			if (name === 'fn')
+				return interpret_fn(env, op, args);
+
+			if (name === 'let')
+				return interpret_let(env, op, args);
+
+			return interpret_s(env, op, args);
+		}
+
+		throw new Error(`Expected symbol, got ${JSON.stringify(op)}.`);
+	}
+	return expr;
+}
+
+export function interpret(program: LVal[]) {
+	const environment = new Environment<LVal>();
+
+	for (const func of native_funcs)
+		environment.define(func.name, new LValFunction({ ...func, toString: '<native fn>' }, func.name));
 
 	try {
-		for (const expr of program)
-			console.log(interpreter.evaluate(expr));
+		for (let i = 0; i < program.length - 1; i++)
+			interpret_expr(environment, program[i]);
+
+		if (program.length > 0)
+			return interpret_expr(environment, program[program.length - 1]);
 	}
 	catch (err) {
 		if (err instanceof RuntimeError)
 			runtimeError(err);
 	}
-	return;
 }

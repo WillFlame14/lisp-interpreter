@@ -5,8 +5,9 @@ import { Token } from './token.ts';
  * number: [0-9.]+
  * symbol: [a-zA-Z_+-/*=<>!&?][a-zA-Z0-9_+-/*=<>!&?]*
  * 
- * literal: 'true' | 'false' | 'nil' | string | number
+ * literal: 'true' | 'false' | 'nil' | string | number | symbol
  * list: '(' primary* ')'
+ * vector: '[' primary* ']'
  * primary: literal | symbol | list
  * 
  * bindings: '[' (symbol expr)* ']'
@@ -25,7 +26,7 @@ import { Token } from './token.ts';
  */
 
 export type Expr = LiteralExpr | SymbolExpr | SExpr | IfExpr | LetExpr | LoopExpr | RecurExpr | FnExpr | QuoteExpr;
-export type PrimaryExpr = LiteralExpr | SymbolExpr | ListExpr;
+export type PrimaryExpr = LiteralExpr | SymbolExpr | ListExpr | VectorExpr;
 export type Binding = { key: Token, value: Expr };
 
 export function isExpr(obj: unknown): obj is Expr {
@@ -36,6 +37,7 @@ export interface ExprVisitor<T> {
 	visitLiteral: (expr: LiteralExpr) => T;
 	visitSymbol: (expr: SymbolExpr) => T;
 	visitList: (expr: ListExpr) => T;
+	visitVector: (expr: VectorExpr) => T;
 	visitSExpr: (expr: SExpr) => T;
 	visitIf: (expr: IfExpr) => T;
 	visitLet: (expr: LetExpr) => T;
@@ -82,6 +84,22 @@ export class ListExpr {
 
 	accept<T>(visitor: ExprVisitor<T>) {
 		return visitor.visitList(this);
+	}
+}
+
+export class VectorExpr {
+	children: PrimaryExpr[];
+
+	/** The closing bracket, used for reporting errors. */
+	r_square: Token;
+
+	constructor(children: PrimaryExpr[], r_paren: Token) {
+		this.children = children;
+		this.r_square = r_paren;
+	}
+
+	accept<T>(visitor: ExprVisitor<T>) {
+		return visitor.visitVector(this);
 	}
 }
 

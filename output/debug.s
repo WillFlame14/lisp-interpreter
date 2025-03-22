@@ -4,3 +4,9 @@ __debexit:
 	mov rdi, rax
 	mov rax, 60   ; sys_exit system call
 	syscall
+
+global __exception
+__exception:
+	mov rdi, 13
+	mov rax, 60   ; sys_exit system call
+	syscall

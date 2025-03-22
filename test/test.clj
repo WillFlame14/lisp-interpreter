@@ -1,1 +1,1 @@
-(print (cons 5 (quote ())))
+(when (= 3 3) 5 (when (= 6 6) 8 9))

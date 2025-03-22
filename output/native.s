@@ -1,6 +1,7 @@
-extern __debexit
 extern __allocate
 extern __deallocate
+extern __debexit
+extern __exception
 
 ; first 6 parameters are in registers rdi, rsi, rdx, rcx, r8, r9
 ; return value is in register rax
@@ -92,6 +93,8 @@ __peek:
 
 __pop:
 	shr rsi, 3 			; remove list tag
+	cmp rsi, 0
+	je pop_empty
 	mov rax, rsi
 	mov rbx, [rsi+8]	; new head
 	push rbx
@@ -99,21 +102,35 @@ __pop:
 	pop rax
 	call __toList
 	ret
+pop_empty:
+	mov rsi, pop_empty_msg
+	mov rdx, 20
+	call writeString
+	call __exception
 
 __nth:
 	shr rsi, 3 		; remove list tag
+	cmp rsi, 0
+	je nth_oob
 	mov rax, rsi	; head (curr)
 	mov rbx, rdx	; i
 	shr rbx, 3		; remove ptr tag
 nth_loop:
 	cmp rbx, 0
 	je nth_peek
+	cmp rax, 0
+	je nth_oob
 	sub rbx, 1
 	mov rax, [rax+8]
 	jmp nth_loop
 nth_peek:
 	mov rax, [rax]
 	ret
+nth_oob:
+	mov rsi, nth_oob_msg
+	mov rdx, 23
+	call writeString
+	call __exception
 
 __count:
 	shr rsi, 3  	; remove list tag
@@ -301,8 +318,7 @@ __error:
 	mov rdx, 17     ; number of bytes to write
 	call writeString
 	syscall
-	mov rax, 1
-	call __debexit
+	call __exception
 
 global __plus_closure
 global __minus_closure
@@ -322,6 +338,8 @@ section .data
 	false_msg: dw "false"
 	fn_msg: dw "<function>"
 	err_msg: dw "Encountered error"
+	pop_empty_msg: dw "Can't pop empty list!"
+	nth_oob_msg: dw "nth index out of bounds!"
 
 	ALIGN 8
 	__plus_closure: dq __plus
