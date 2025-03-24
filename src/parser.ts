@@ -92,7 +92,7 @@ export class Parser {
 		return vector ? new LValVector(children, r_paren) : new LValList(children, r_paren);
 	}
 
-	// primary: literal | symbol | list
+	// primary: literal | symbol | list | vector
 	parse_primary() {
 		const next = this.peek();
 

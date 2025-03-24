@@ -18,7 +18,8 @@ export function truthy(lval: LVal) {
 }
 
 export interface Callable {
-	name?: string,
+	name?: string;
+	macro?: boolean;
 	arity: number;
 	params: LValType[];
 	params_rest: LValType[];
@@ -76,7 +77,7 @@ function interpret_fn(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
 
 			return interpret_expr(nested, body);
 		},
-		toString: '<user fn>'
+		toString: body.toString()
 	};
 
 	return new LValFunction(func, name?.value.lexeme);
@@ -112,13 +113,34 @@ function interpret_s(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
 	if (!(func instanceof LValFunction))
 		throw new RuntimeError(op.value, `Symbol ${op.value.lexeme} is not a function.`);
 
+	const { arity, params, params_rest } = func.value;
+
+	const expected_arity = arity === -1 ? args.length : func.value.arity;
+
+	if (expected_arity !== args.length)
+		throw new RuntimeError(op.value, `Function requires ${expected_arity} parameters, got ${args.length}.`);
+
 	const evaluated_args = args.map(arg => interpret_expr(env, arg));
+
+	if (params.length > 0) {
+		for (let i = 0; i < evaluated_args.length; i++) {
+			const arg = evaluated_args[i];
+			const expected_type = params[i] ?? params_rest[(i - params.length) % params_rest.length];
+
+			if (expected_type === LValType.ANY)
+				continue;
+
+			if (arg.type !== expected_type)
+				throw new RuntimeError(op.value, `Parameter ${i + 1} to function (${JSON.stringify(evaluated_args[i])}) doesn't match expected type ${expected_type}.`);
+		}
+	}
+
 	const result = func.value.call(env, evaluated_args, op.value);
 
 	return result;
 }
 
-function interpret_expr(env: Environment<LVal>, expr: LVal): LVal {
+export function interpret_expr(env: Environment<LVal>, expr: LVal): LVal {
 	if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil)
 		return expr;
 

@@ -55,7 +55,7 @@ export class LValNil {
 	value = null;
 
 	toString(): string {
-		return 'null';
+		return 'nil';
 	}
 }
 

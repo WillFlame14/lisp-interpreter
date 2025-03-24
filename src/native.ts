@@ -61,6 +61,15 @@ const arithmetic_funcs: NativeFunc[] = [
 
 const logical_funcs: NativeFunc[] = [
 	{
+		name: 'not',
+		arity: 1,
+		params: [LValType.ANY],
+		params_rest: [],
+		call: (_env: Environment<LVal>, args: LVal[]) => {
+			return new LValBoolean(!truthy(args[0]));
+		}
+	},
+	{
 		name: 'or',
 		arity: -1,
 		params: [],
@@ -112,6 +121,15 @@ const io_funcs: NativeFunc[] = [
 ];
 
 const list_funcs: NativeFunc[] = [
+	{
+		name: 'list',
+		arity: -1,
+		params: [],
+		params_rest: [LValType.ANY],
+		call: (_env: Environment<LVal>, args: LVal[]) => {
+			return new LValList(args);
+		}
+	},
 	{
 		name: 'cons',
 		arity: 2,
@@ -173,6 +191,7 @@ const list_funcs: NativeFunc[] = [
 export const native_macros: NativeFunc[] = [
 	{
 		name: 'when',
+		macro: true,
 		arity: 2,
 		params: [LValType.ANY, LValType.ANY],
 		params_rest: [LValType.ANY],
