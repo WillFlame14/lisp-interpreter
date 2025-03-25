@@ -27,7 +27,7 @@ export interface Callable {
 	toString: string;
 }
 
-function argError(op: LValSymbol, args: LVal[]) {
+export function argError(op: LValSymbol, args: LVal[]) {
 	return new RuntimeError(op.value, `Wrong number of args (${args.length}) passed to ${op.value.lexeme}.`);
 }
 

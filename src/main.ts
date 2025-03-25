@@ -60,17 +60,17 @@ export function run(source: string) {
 	const expanded = macroexpand(program);
 	// console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
 
-	return interpret(expanded)?.toString();
-	// fs.writeFileSync('output/out.s', compile(program));
+	// return interpret(expanded)?.toString();
+	fs.writeFileSync('output/out.s', compile(expanded));
 
-	// try {
-	// 	const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
-	// 	return proc.stdout.toString();
-	// }
-	// catch (err) {
-	// 	console.log(err);
-	// 	return;
-	// }
+	try {
+		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+		return proc.stdout.toString();
+	}
+	catch (err) {
+		console.log(err);
+		return;
+	}
 }
 
 export function error(line: number, message: string) {

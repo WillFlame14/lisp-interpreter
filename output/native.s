@@ -128,7 +128,7 @@ nth_peek:
 	ret
 nth_oob:
 	mov rsi, nth_oob_msg
-	mov rdx, 23
+	mov rdx, 24
 	call writeString
 	call __exception
 
