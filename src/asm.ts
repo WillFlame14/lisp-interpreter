@@ -1,4 +1,3 @@
-import { astPrinter } from './ast.ts';
 import { TEnvVar, TranslatorEnv, VarType } from './environment.ts';
 import { LVal, LValBoolean, LValList, LValNil, LValNumber, LValString, LValSymbol, LValVector } from './types.ts';
 import { argError, RuntimeError } from './interpreter.ts';
@@ -82,7 +81,7 @@ class Translator {
 
 		if (expr instanceof LValString) {
 			const string_label = `string${this.getId()}`;
-			this.data.push(`dq ${expr.value.length}`, `${string_label}: dw ${expr.value}`);
+			this.data.push(`dq ${expr.value.length}`, `${string_label}: dq "${expr.value}"`);
 			this.asm.push(`mov rax, ${string_label}`, `call __toString`);
 			return;
 		}
@@ -163,7 +162,7 @@ class Translator {
 		this.asm.push('call __toList');
 	}
 
-	compile_s(op: LValSymbol, args: LVal[]) {
+	compile_s(op: LValSymbol | LValList, args: LVal[]) {
 		const save_reg_params = 1 + Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
 
 		// Save first 4 register params if needed
@@ -179,12 +178,12 @@ class Translator {
 		// Get closure in rax
 		this.compile_expr(op);
 
-		// this.asm.push(
-		// 	'mov rbx, 7',
-		// 	'and rbx, rax',
-		// 	'cmp rbx, 3',
-		// 	'jne __error',		// confirm that rax holds a closure
-		// );
+		this.asm.push(
+			'mov rbx, 7',
+			'and rbx, rax',
+			'cmp rbx, 3',
+			'jne __error',		// confirm that rax holds a closure
+		);
 
 		// Pass closure as first param
 		this.asm.push(`mov ${REGISTER_PARAMS[0]}, rax`);
@@ -325,6 +324,16 @@ class Translator {
 		}
 	}
 
+	compile_do(_op: LValSymbol, args: LVal[]) {
+		if (args.length === 0) {
+			this.asm.push('mov rax, 0');
+			return;
+		}
+
+		for (const arg of args)
+			this.compile_expr(arg);
+	}
+
 	compile_expr(expr: LVal) {
 		if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil) {
 			this.compile_literal(expr);
@@ -353,9 +362,16 @@ class Translator {
 				else if (name === 'let')
 					this.compile_let(op, args);
 
+				else if (name === 'do')
+					this.compile_do(op, args);
+
 				else
 					this.compile_s(op, args);
 
+				return;
+			}
+			else if (op instanceof LValList) {
+				this.compile_s(op, args);
 				return;
 			}
 

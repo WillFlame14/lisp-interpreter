@@ -3,52 +3,37 @@ extern __deallocate
 extern __debexit
 extern __exception
 
-; first 6 parameters are in registers rdi, rsi, rdx, rcx, r8, r9
-; return value is in register rax
-; registers that must be saved are rbx, rsp, rbp, r12-r15
+extern __toBool
+extern __toInt
+extern __toClosure
+extern __toList
+extern __toString
 
-; fn prelude
-; push rbp
-; mov rbp, rsp
+extern __boolean?
+extern __int?
+extern __fn?
+extern __list?
+extern __string?
 
-; fn coda
-; pop rbp
 
-global __toBool
-__toBool:
-	shl rax, 3
-	or rax, 1
-	ret
-
-global __toInt
-__toInt:
-	shl rax, 3
-	or rax, 2
-	ret
-
-global __toClosure
-__toClosure:
-	or rax, 3
-	ret
-
-global __toList
-__toList:
-	shl rax, 3
-	or rax, 4
-	ret
-
-global __toString
-__toString:
-	or rax, 5
-	ret
-
-global __removeTag
-__removeTag:
-	shr rax, 3
-	shl rax, 3
-	ret
+extern err_arg_bool
+extern err_arg_int
+extern err_arg_fn
+extern err_arg_list
+extern err_arg_string
 
 __plus:
+	mov rax, rsi
+	call __int?
+	shr rax, 3
+	cmp rax, 1
+	jne err_arg_int
+	mov rax, rdx
+	call __int?
+	shr rax, 3
+	cmp rax, 1
+	jne err_arg_int
+
 	shr rsi, 3
 	shr rdx, 3
 	add rsi, rdx
@@ -57,6 +42,17 @@ __plus:
 	ret
 
 __minus:
+	mov rax, rsi
+	call __int?
+	shr rax, 3
+	cmp rax, 1
+	jne err_arg_int
+	mov rax, rdx
+	call __int?
+	shr rax, 3
+	cmp rax, 1
+	jne err_arg_int
+
 	shr rsi, 3
 	shr rdx, 3
 	sub rsi, rdx
@@ -74,6 +70,12 @@ __eq:
 	ret
 
 __cons:
+	mov rax, rdx
+	call __list?
+	shr rax, 3
+	cmp rax, 1
+	jne err_arg_list
+
 	shr rdx, 3 			; remove list tag
 	push rsi			; save params before calling allocate
 	push rdx
@@ -179,9 +181,12 @@ __print:
 	je print_fn
 	cmp rax, 4
 	je print_list
+	cmp rax, 5
+	je print_string
 print_nil:
 	mov rsi, nil_msg
 	mov rdx, 3
+	call writeString
 	jmp print_end
 print_bool:
 	shr rsi, 3
@@ -263,11 +268,18 @@ list_end:
 	call writeString
 	pop r12
 	jmp print_end
+print_string:
+	shr rsi, 3
+	shl rsi, 3
+	mov rdx, [rsi-8]
+	call writeString
+	jmp print_end
 print_end:
 	mov rax, 0
 	ret
 
 ; rsi holds address of bytes, rdx holds number of bytes
+global writeString
 writeString:
 	mov rax, 1     ; sys_write system call
 	mov rdi, 1     ; stdout

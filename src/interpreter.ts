@@ -5,9 +5,9 @@ import { Token } from './token.ts';
 import { LVal, LValBoolean, LValFunction, LValList, LValNil, LValNumber, LValString, LValSymbol, LValType, LValVector } from './types.ts';
 
 export class RuntimeError extends Error {
-	token: Token;
+	token?: Token;
 
-	constructor(token: Token, message: string) {
+	constructor(token: Token | undefined, message: string) {
 		super(message);
 		this.token = token;
 	}
@@ -23,7 +23,7 @@ export interface Callable {
 	arity: number;
 	params: LValType[];
 	params_rest: LValType[];
-	call: (inner_env: Environment<LVal>, args: LVal[], token: Token) => LVal;
+	call: (inner_env: Environment<LVal>, args: LVal[], token?: Token) => LVal;
 	toString: string;
 }
 
@@ -107,18 +107,29 @@ function interpret_let(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
 	return interpret_expr(nested, body);
 }
 
-function interpret_s(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
-	const func = env.retrieve(op.value);
+function interpret_do(env: Environment<LVal>, _op: LValSymbol, args: LVal[]) {
+	if (args.length === 0)
+		return new LValNil();
+
+	for (let i = 0; i < args.length - 1; i++)
+		interpret_expr(env, args[i]);
+
+	return interpret_expr(env, args[args.length - 1]);
+}
+
+function interpret_s(env: Environment<LVal>, op: LValSymbol | LValList, args: LVal[]) {
+	const func = (op instanceof LValList) ? interpret_expr(env, op): env.retrieve(op.value);
+	const token = (op instanceof LValList) ? op.l_paren : op.value;
 
 	if (!(func instanceof LValFunction))
-		throw new RuntimeError(op.value, `Symbol ${op.value.lexeme} is not a function.`);
+		throw new RuntimeError(token, `${op instanceof LValList ? 'List' : `Symbol ${token?.lexeme}`} is not a function.`);
 
 	const { arity, params, params_rest } = func.value;
 
 	const expected_arity = arity === -1 ? args.length : func.value.arity;
 
 	if (expected_arity !== args.length)
-		throw new RuntimeError(op.value, `Function requires ${expected_arity} parameters, got ${args.length}.`);
+		throw new RuntimeError(token, `Function requires ${expected_arity} parameters, got ${args.length}.`);
 
 	const evaluated_args = args.map(arg => interpret_expr(env, arg));
 
@@ -131,11 +142,11 @@ function interpret_s(env: Environment<LVal>, op: LValSymbol, args: LVal[]) {
 				continue;
 
 			if (arg.type !== expected_type)
-				throw new RuntimeError(op.value, `Parameter ${i + 1} to function (${JSON.stringify(evaluated_args[i])}) doesn't match expected type ${expected_type}.`);
+				throw new RuntimeError(token, `Parameter ${i + 1} to function (${JSON.stringify(evaluated_args[i])}) doesn't match expected type ${expected_type}.`);
 		}
 	}
 
-	const result = func.value.call(env, evaluated_args, op.value);
+	const result = func.value.call(env, evaluated_args, token);
 
 	return result;
 }
@@ -174,10 +185,19 @@ export function interpret_expr(env: Environment<LVal>, expr: LVal): LVal {
 			if (name === 'let')
 				return interpret_let(env, op, args);
 
+			if (name === 'do')
+				return interpret_do(env, op, args);
+
 			return interpret_s(env, op, args);
 		}
+		else if (op instanceof LValList) {
+			const nested_op = interpret_expr(env, op);
 
-		throw new Error(`Expected symbol, got ${JSON.stringify(op)}.`);
+			if (nested_op instanceof LValSymbol)
+				return interpret_s(env, nested_op, args);
+		}
+
+		throw new Error(`Expected symbol/s-expression, got ${JSON.stringify(op)}.`);
 	}
 	return expr;
 }

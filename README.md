@@ -39,17 +39,19 @@ There are various special forms: `if`, `let`, `do`, `fn`, `loop`/`recur` (not im
 	- (e.g. `(if true 3 4)` returns `3`)
 - `let` is used for local binding of variables. It has the structure `(let bindings body)`, where `bindings` is a vector with odd elements as names and even elements as their corresponding values.
 	- (e.g. `(let [x 4 y 5] (+ x y))` returns `9`)
+- `do` is used for chaining multiple expressions together, returning the value of the last one. It has the structure `(do & expr)`, meaning it can be followed by any number of expressions.
+	- (e.g. `(do (print "hi") 5)` returns 5, but also prints "hi")
 - `fn` declares an inline function. It has the structure `(fn name? params body)`, where `params` is a vector of names corresponding to the parameters in order.
 	- (e.g. `(fn mult [a b] (* a b)` returns a function that takes 2 arguments and returns their product)
 - `loop` marks the start of a loop. It has the structure `(loop bindings body)`, where `bindings` is the same as those in `let`.
 - `recur` jumps back to the nearest `loop`. It has the structure `(recur & new-bindings)`.
-	- (e.g. `(loop [i 1] (if (< i 6) (do (print i) (recur (+ i 1)))))` prints out the numbers from 1 to 5.`)
+	- (e.g. `(loop [i 1] (if (< i 6) (do (print i) (recur (+ i 1)))))` prints out the numbers from 1 to 5)
 - `quote` escapes evaluation. It has the structure `(quote value)`.
-	- (e.g. `(quote (1 2 3))` returns the list `(1 2 3)`, without trying to evaluate this as a function call.)
+	- (e.g. `(quote (1 2 3))` returns the list `(1 2 3)`, without trying to evaluate this as a function call)
 - `defn` declares a function in global scope. It has the structure `(defn name params body)`.
 - `defmacro` declares a macro in global scope. It has the structure `(defmacro name params body)`.
 
-Various functions are also included in the standard library.
+Various functions are also included in the standard library. See `native.ts`/`native.s` as well as `stdlib.clj`.
 
 ## Testing
 
