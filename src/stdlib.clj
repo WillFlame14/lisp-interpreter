@@ -13,3 +13,16 @@
       (if (f head) 
         (cons head rest)
         rest))))
+
+(defn not [x] (if x false true))
+
+(defn concat [x y]
+  (if (empty? x)
+    y
+    (cons (peek x) (concat (pop x) y))))
+
+(defn not= [x y] (not (= x y)))
+
+(defn inc [x] (+ x 1))
+
+(defn dec [x] (- x 1))

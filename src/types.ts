@@ -1,18 +1,13 @@
-import { Callable } from "./interpreter.ts";
-import { Token } from "./token.ts";
+import { Token } from './token.ts';
+import { BaseType, ComplexType, IExpr, } from './expr.ts';
+import { Callable } from './interpreter.ts';
 
-export enum LValType {
-	NUMBER = 'NUMBER', STRING = 'STRING', BOOLEAN = 'BOOLEAN', NIL = 'NIL',
+export type LVal = LValNumber | LValString | LValBoolean | LValNil | LValSymbol | LValList | LValVector;
 
-	SYMBOL = 'SYMBOL', LIST = 'LIST', VECTOR = 'VECTOR', FUNCTION = 'FUNCTION', S = 'S',
-
-	ANY = 'ANY',
-}
-
-export type LVal = LValNumber | LValString | LValBoolean | LValNil | LValSymbol | LValList | LValVector | LValFunction;
-
-export class LValNumber {
-	type = LValType.NUMBER;
+export class LValNumber implements IExpr {
+	readonly type = BaseType.NUMBER;
+	readonly return_type = { type: BaseType.NUMBER };
+	readonly captured_symbols = new Set<string>();
 	value: number;
 
 	constructor(value: number) {
@@ -24,8 +19,10 @@ export class LValNumber {
 	}
 }
 
-export class LValString {
-	type = LValType.STRING;
+export class LValString implements IExpr {
+	readonly type = BaseType.STRING;
+	readonly return_type = { type: BaseType.STRING };
+	readonly captured_symbols = new Set<string>();
 	value: string;
 
 	constructor(value: string) {
@@ -37,8 +34,10 @@ export class LValString {
 	}
 }
 
-export class LValBoolean {
-	type = LValType.BOOLEAN;
+export class LValBoolean implements IExpr {
+	readonly type = BaseType.BOOLEAN;
+	readonly return_type = { type: BaseType.BOOLEAN };
+	readonly captured_symbols = new Set<string>();
 	value: boolean;
 
 	constructor(value: boolean) {
@@ -50,9 +49,11 @@ export class LValBoolean {
 	}
 }
 
-export class LValNil {
-	type = LValType.NIL;
-	value = null;
+export class LValNil implements IExpr {
+	readonly type = BaseType.NIL;
+	readonly return_type = { type: BaseType.NIL };
+	readonly captured_symbols = new Set<string>();
+	readonly value = null;
 
 	toString(): string {
 		return 'nil';
@@ -60,7 +61,7 @@ export class LValNil {
 }
 
 export class LValSymbol {
-	type = LValType.SYMBOL;
+	readonly type = BaseType.SYMBOL;
 	value: Token;
 
 	constructor(value: Token) {
@@ -73,11 +74,11 @@ export class LValSymbol {
 }
 
 export class LValList {
-	type = LValType.LIST;
+	readonly type = BaseType.LIST;
 	value: LVal[];
-	l_paren?: Token;
+	l_paren: Token;
 
-	constructor(value: LVal[], l_paren?: Token) {
+	constructor(value: LVal[], l_paren: Token) {
 		this.value = value;
 		this.l_paren = l_paren;
 	}
@@ -88,11 +89,11 @@ export class LValList {
 }
 
 export class LValVector {
-	type = LValType.VECTOR;
+	readonly type = BaseType.VECTOR;
 	value: LVal[];
-	l_paren?: Token;
+	l_paren: Token;
 
-	constructor(value: LVal[], l_paren?: Token) {
+	constructor(value: LVal[], l_paren: Token) {
 		this.value = value;
 		this.l_paren = l_paren;
 	}
@@ -102,17 +103,45 @@ export class LValVector {
 	}
 }
 
-export class LValFunction {
-	type = LValType.FUNCTION;
-	name?: string;
-	value: Callable;
+export type RuntimeVal = RuntimeNumber | RuntimeString | RuntimeBoolean | RuntimeNil | RuntimeSymbol | RuntimeList | RuntimeVector | RuntimeFunction;
 
-	constructor(value: Callable, name?: string) {
-		this.value = value;
-		this.name = name;
-	}
+export type RuntimeNumber = {
+	type: BaseType.NUMBER,
+	value: number
+};
 
-	toString(): string {
-		return this.name !== undefined ? `<fn ${this.name}>` : '<fn anon>';
-	}
+export type RuntimeString = {
+	type: BaseType.STRING,
+	value: string
 }
+
+export type RuntimeBoolean = {
+	type: BaseType.BOOLEAN,
+	value: boolean
+}
+
+export type RuntimeNil = {
+	type: BaseType.NIL,
+	value: null
+}
+
+export type RuntimeSymbol = {
+	type: BaseType.SYMBOL,
+	value: Token
+};
+
+export type RuntimeList = {
+	type: BaseType.LIST,
+	value: RuntimeVal[]
+}
+
+export type RuntimeVector = {
+	type: BaseType.VECTOR,
+	value: RuntimeVal[]
+}
+
+export type RuntimeFunction = {
+	type: ComplexType.FUNCTION,
+	name?: string,
+	value: Callable
+};

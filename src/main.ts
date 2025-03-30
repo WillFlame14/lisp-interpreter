@@ -1,16 +1,15 @@
 import * as fs from 'node:fs';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { execFileSync } from 'node:child_process';
 
 import { scanTokens } from './scanner.ts';
 import { parse } from './parser.ts';
 import { interpret, RuntimeError } from './interpreter.ts';
-import { astPrinter } from './ast.ts';
 import { compile } from './asm.ts';
 import { macroexpand } from './reader.ts';
+import { CompileError, static_check } from './checker.ts';
 
-let hadError = false, hadRuntimeError = false;
+let hadError = false, hadCompileError = false, hadRuntimeError = false;
 
 function main() {
 	const args = process.argv.slice(2);
@@ -25,7 +24,7 @@ function runFile(path: string) {
 	const source = fs.readFileSync(path, 'utf8');
 	const stdout = run(source);
 
-	if (hadError)
+	if (hadError || hadCompileError)
 		process.exit(65);
 
 	if (hadRuntimeError)
@@ -42,6 +41,7 @@ function prompt() {
 		const stdout = run(source);
 		console.dir(stdout);
 		hadError = false;
+		hadCompileError = false;
 		hadRuntimeError = false;
 	});
 }
@@ -58,19 +58,22 @@ export function run(source: string) {
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
 	const expanded = macroexpand(program);
-	// console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
+	console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
 
-	// return interpret(expanded)?.toString();
-	fs.writeFileSync('output/out.s', compile(expanded));
+	const exprs = static_check(expanded);
+	console.log('static checked', exprs.map(e => e.toString()).join('\n'));
 
-	try {
-		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
-		return proc.stdout.toString();
-	}
-	catch (err) {
-		console.log(err);
-		return;
-	}
+	return interpret(exprs);
+	// fs.writeFileSync('output/out.s', compile(expanded));
+
+	// try {
+	// 	const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+	// 	return proc.stdout.toString();
+	// }
+	// catch (err) {
+	// 	console.log(err);
+	// 	return;
+	// }
 }
 
 export function error(line: number, message: string) {
@@ -82,8 +85,13 @@ export function report(line: number, where: string, message: string) {
 	hadError = true;
 }
 
+export function compileError(error: CompileError) {
+	console.error(`CompileError: ${error.message}\n[line ${error.token?.line}]`);
+	hadCompileError = true;
+}
+
 export function runtimeError(error: RuntimeError) {
-	console.error(`${error.message}\n[line ${error.token.line}]`);
+	console.error(`RuntimeError: ${error.message}\n[line ${error.token?.line}]`);
 	hadRuntimeError = true;
 }
 

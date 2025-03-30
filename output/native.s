@@ -15,7 +15,6 @@ extern __fn?
 extern __list?
 extern __string?
 
-
 extern err_arg_bool
 extern err_arg_int
 extern err_arg_fn

@@ -25,7 +25,8 @@ export default tseslint.config(
 			'no-trailing-spaces': ['warn', { ignoreComments: true }],
 			'prefer-const': 'warn',
 			'curly': ['warn', 'multi-or-nest', 'consistent'],
-			'@typescript-eslint/restrict-template-expressions': 'off'
+			'@typescript-eslint/restrict-template-expressions': 'off',
+			'@typescript-eslint/no-non-null-assertion': 'off'
 		}
 	}
 );

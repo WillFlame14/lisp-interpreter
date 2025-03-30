@@ -324,6 +324,65 @@ class Translator {
 		}
 	}
 
+	compile_defn(op: LValSymbol, args: LVal[]) {
+		if (args.length !== 3)
+			throw argError(op, args);
+
+		const [name, params, body] = args;
+
+		if (!(name instanceof LValSymbol))
+			throw new RuntimeError(op.value, 'Functions defined using defn must have a name.');
+
+		if (!(params instanceof LValVector) || !params.value.every(param => param instanceof LValSymbol))
+			throw new RuntimeError(op.value, 'Expected a vector of symbols.');
+
+		const label_after = `after_${this.getId()}`;
+		const label_fn = `named${this.getId()}_${name.value.lexeme}`;
+
+		const enclosing = this.env;
+		const nested = new TranslatorEnv(enclosing);
+
+		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dq 0`));
+
+		this.asm.push(
+			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
+				if (symbol.type === VarType.FUNC)
+					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+				else
+					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+			}),
+			`jmp ${label_after}`,
+			`${label_fn}:`,
+			'push rbp',
+			'mov rbp, rsp');
+
+		// Set up closure vars
+		for (const key of Object.keys(enclosing.symbolMap))
+			nested.bind(key, VarType.CLOSURE);
+
+		for (const token of params.value)
+			nested.bind(token.value.lexeme, VarType.PARAM);
+
+		// Allow recursion
+		nested.bind(name.value.lexeme, VarType.FUNC, `${label_fn}_closure`);
+		this.env.bind(name.value.lexeme, VarType.FUNC, `${label_fn}_closure`);
+
+		try {
+			this.env = nested;
+			this.compile_expr(body);
+			this.asm.push(
+				'pop rbp',
+				'ret',
+				`${label_after}:`,
+				`mov rax, ${label_fn}_closure`,
+				`call __toClosure`
+			);
+		}
+		finally {
+			this.env = enclosing;
+		}
+	}
+
 	compile_do(_op: LValSymbol, args: LVal[]) {
 		if (args.length === 0) {
 			this.asm.push('mov rax, 0');
@@ -361,6 +420,9 @@ class Translator {
 
 				else if (name === 'let')
 					this.compile_let(op, args);
+
+				else if (name === 'defn')
+					this.compile_defn(op, args);
 
 				else if (name === 'do')
 					this.compile_do(op, args);
