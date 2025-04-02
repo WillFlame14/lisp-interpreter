@@ -60,8 +60,8 @@ function check_if(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
 	const true_child = check_val(env, truthy_expr);
 	const false_child = check_val(env, falsy_expr);
 
-	// if (true_child.return_type !== false_child.return_type)
-	// 	throw new CompileError(op.value, `Types of true child (${JSON.stringify(true_child.return_type)}) and false child (${JSON.stringify(false_child.return_type)}) don't match.`);
+	if (true_child.return_type !== false_child.return_type)
+		throw new CompileError(op.value, `Types of true child (${JSON.stringify(true_child.return_type)}) and false child (${JSON.stringify(false_child.return_type)}) don't match.`);
 
 	const captured_symbols = cond.captured_symbols.union(true_child.captured_symbols).union(false_child.captured_symbols);
 
@@ -97,16 +97,17 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 
 	for (let i = 0; i < params.length; i++) {
 		const param = params[i].lexeme;
-		nested.define(param, new SymbolExpr({ type: TokenType.SYMBOL, literal: undefined, lexeme: param, line: -1 }, new Set<string>(), { type: BaseType.ANY }));
+		const token = { type: TokenType.SYMBOL, literal: undefined, lexeme: param, line: -1 };
+		nested.define(param, new SymbolExpr(token, new Set<string>(), { type: ComplexType.POLY, sym: Symbol(param) }));
 	}
 
 	if (name !== undefined)
-		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), { type: BaseType.NIL }, new Set<string>(), op.value, name.value.lexeme));
+		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), { type: ComplexType.POLY, sym: Symbol(name.value.lexeme) }, new Set<string>(), op.value, { name: name.value.lexeme }));
 
 	const body = check_val(nested, body_expr);
 
 	if (def) {
-		const fn = new FnExpr(def, params, body, { type: BaseType.NIL }, body.captured_symbols.difference(param_symbols), op.value, name?.value.lexeme);
+		const fn = new FnExpr(def, params, body, { type: BaseType.NIL }, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
 		env.define(name!.value.lexeme, fn);
 		return fn;
 	}
@@ -114,10 +115,10 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 		const return_type = {
 			type: ComplexType.FUNCTION as const,
 			arity: params.length,
-			params: [],
-			return_type: { type: BaseType.NIL }
+			params: params.map(p => nested.retrieve(p).return_type),
+			return_type: body.return_type
 		};
-		const fn = new FnExpr(def, params, body, return_type, body.captured_symbols.difference(param_symbols), op.value, name?.value.lexeme);
+		const fn = new FnExpr(def, params, body, return_type, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
 		return fn;
 	}
 }
@@ -185,12 +186,16 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 
 	const evaluated_args = args.map(arg => check_val(env, arg));
 
-	if (params.length > 0) {
+	console.log('checking s', params, func_expr);
+
+	if (params.length > 0 || params_rest !== undefined) {
 		for (let i = 0; i < evaluated_args.length; i++) {
 			const arg = evaluated_args[i];
 			const expected_type = params[i] ?? params_rest;
 
-			if (expected_type.type === BaseType.ANY)
+			console.log('comparing', arg.return_type, expected_type);
+
+			if (arg.return_type.type === BaseType.ANY || expected_type.type === BaseType.ANY)
 				continue;
 
 			if (arg.return_type.type !== expected_type.type)
@@ -262,7 +267,8 @@ export function static_check(program: LVal[]) {
 			return_type
 		};
 		const dummy_token = { type: TokenType.NIL, literal: undefined, lexeme: '', line: -1 };
-		env.define(name, new FnExpr(true, params.map(_ => dummy_token), new LValNil(), type, new Set<string>(), dummy_token, name));
+		const optionals = { name, params_rest: params_rest !== undefined ? dummy_token : undefined };
+		env.define(name, new FnExpr(true, params.map(_ => dummy_token), new LValNil(), type, new Set<string>(), dummy_token, optionals));
 	}
 
 	try {

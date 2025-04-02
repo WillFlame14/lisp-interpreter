@@ -33,7 +33,7 @@ export enum BaseType {
 }
 
 export enum ComplexType {
-	FUNCTION = 'FUNCTION', OBJECT = 'OBJECT'
+	FUNCTION = 'FUNCTION', OBJECT = 'OBJECT', POLY = 'POLY'
 }
 
 export type ExprType = { type: BaseType } |
@@ -43,6 +43,10 @@ export type ExprType = { type: BaseType } |
 		params: ExprType[],
 		params_rest?: ExprType,
 		return_type: ExprType
+	} |
+	{
+		type: ComplexType.POLY,
+		sym: symbol
 	};
 
 export interface IExpr {
@@ -57,6 +61,19 @@ export type Binding = { key: Token, value: Expr };
 
 export type LiteralExpr = LValNumber | LValString | LValBoolean | SymbolExpr | LValNil | FnExpr;
 
+function logType(type: ExprType): string {
+	if (type.type === ComplexType.FUNCTION) {
+		const { params, params_rest, return_type } = type;
+
+		return `FUNCTION (${params.map(logType).join(', ')}${params_rest !== undefined ? ` & ${logType(params_rest)}`: ''}) => ${logType(return_type)}`;
+	}
+
+	if (type.type === ComplexType.POLY)
+		return type.sym.toString();
+
+	return type.type;
+}
+
 export class SymbolExpr implements IExpr {
 	name: Token;
 	captured_symbols: Set<string>;
@@ -69,7 +86,7 @@ export class SymbolExpr implements IExpr {
 	}
 
 	toString() {
-		return `(SYMBOL ${this.name.lexeme}: type ${this.return_type.type})`;
+		return `(SYMBOL ${this.name.lexeme}: type ${logType(this.return_type)})`;
 	}
 }
 
@@ -113,16 +130,18 @@ export class FnExpr implements IExpr {
 	def: boolean;
 	name?: string;
 	params: Token[];
+	params_rest?: Token;
 	body: Expr;
 	captured_symbols: Set<string>;
 	return_type: ExprType;
 
 	l_paren: Token;
 
-	constructor(def: boolean, params: Token[], body: Expr, return_type: ExprType, captured_symbols: Set<string>, l_paren: Token, name?: string) {
+	constructor(def: boolean, params: Token[], body: Expr, return_type: ExprType, captured_symbols: Set<string>, l_paren: Token, optionals: { params_rest?: Token, name?: string } = {}) {
 		this.def = def;
-		this.name = name;
+		this.name = optionals.name;
 		this.params = params;
+		this.params_rest = optionals.params_rest;
 		this.body = body;
 		this.return_type = return_type;
 		this.captured_symbols = captured_symbols;
@@ -130,7 +149,7 @@ export class FnExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(FUNCTION${this.name === undefined ? '' : ` ${this.name}`}: [${this.params.map(p => p.lexeme).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${this.return_type.type})`;
+		return `(FUNCTION${this.name === undefined ? '' : ` ${this.name}`}: [${this.params.map(p => p.lexeme).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -152,7 +171,7 @@ export class SExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}, captures ${Array.from(this.captured_symbols).join()}, returns ${this.return_type.type})`;
+		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -172,7 +191,7 @@ export class IfExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${this.return_type.type})`;
+		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -190,7 +209,7 @@ export class LetExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(LET: [${this.bindings.map(b => `${b.key.lexeme} ${b.value.toString()}`).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${this.return_type.type})`;
+		return `(LET: [${this.bindings.map(b => `${b.key.lexeme} ${b.value.toString()}`).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
 	}
 }
 
