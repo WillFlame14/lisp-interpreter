@@ -102,11 +102,11 @@ function interpret_s(env: Environment<RuntimeVal>, expr: SExpr) {
 	if (func.type !== ComplexType.FUNCTION)
 		throw new RuntimeError(expr.l_paren, `${op.toString()} is not a function.`);
 
-	const { arity, params, params_rest } = func.value;
+	const { name, arity, params, params_rest } = func.value;
 	const expected_arity = arity === -1 ? children.length : func.value.arity;
 
 	if (expected_arity !== children.length)
-		throw new RuntimeError(expr.l_paren, `Function requires ${expected_arity} parameters, got ${children.length}.`);
+		throw new RuntimeError(expr.l_paren, `Function ${name !== undefined ? name : '(anon)'} requires ${expected_arity} parameters, got ${children.length}.`);
 
 	const evaluated_args = children.map(child => interpret_expr(env, child));
 

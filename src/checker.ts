@@ -21,9 +21,6 @@ export function argError(op: LValSymbol, args: LVal[]) {
 function check_symbol(env: Environment<Expr>, val: LValSymbol) {
 	const res = env.retrieve(val.value);
 
-	if (res.return_type.type === ComplexType.FUNCTION)
-		return res;
-
 	return new SymbolExpr(val.value, new Set([val.value.lexeme]), res.return_type);
 }
 
@@ -101,8 +98,15 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 		nested.define(param, new SymbolExpr(token, new Set<string>(), { type: ComplexType.POLY, sym: Symbol(param), narrowable: true }));
 	}
 
-	if (name !== undefined)
-		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), { type: ComplexType.POLY, sym: Symbol(name.value.lexeme), narrowable: true }, new Set<string>(), op.value, { name: name.value.lexeme }));
+	if (name !== undefined) {
+		const return_type = {
+			type: ComplexType.FUNCTION as const,
+			arity: params.length,
+			params: params.map(p => nested.retrieve(p).return_type),
+			return_type: { type: ComplexType.POLY, sym: Symbol(name.value.lexeme), narrowable: true }
+		} as const;
+		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), return_type, new Set<string>(), op.value, { name: name.value.lexeme }));
+	}
 
 	const body = check_val(nested, body_expr);
 
@@ -176,38 +180,60 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 	const func_expr = check_val(env, op);
 	const token = (op instanceof LValList) ? op.l_paren : op.value;
 
-	if ((!(func_expr instanceof SExpr || func_expr instanceof SymbolExpr || func_expr instanceof FnExpr) || func_expr.return_type.type !== ComplexType.FUNCTION))
-		throw new CompileError(token, `${op instanceof LValList ? 'List' : `Symbol ${token.lexeme}`} is not a function.`);
+	const is_func = func_expr instanceof SExpr || func_expr instanceof SymbolExpr || func_expr instanceof FnExpr;
 
-	const { return_type: func_type } = func_expr;
-	const { arity, params, params_rest } = func_type;
+	if (!is_func)
+		throw new CompileError(token, `${op instanceof LValList ? 'List' : `Symbol ${token.lexeme}`} is not a function (got ${func_expr.toString()}).`);
 
-	const expected_arity = arity === -1 ? args.length : arity;
+	if (func_expr.return_type.type !== ComplexType.POLY && func_expr.return_type.type !== ComplexType.FUNCTION)
+		throw new CompileError(token, `${op instanceof LValList ? 'List' : `Symbol ${token.lexeme}`} is not a function (got ${func_expr.toString()}).`);
 
-	if (expected_arity !== args.length)
-		throw new CompileError(token, `Function requires ${expected_arity} parameters, got ${args.length}.`);
+	if (func_expr.return_type.type === ComplexType.FUNCTION) {
+		const { return_type: func_type } = func_expr;
+		const { arity, params, params_rest } = func_type;
 
-	const evaluated_args = args.map(arg => check_val(env, arg));
+		const expected_arity = arity === -1 ? args.length : arity;
 
-	if (params.length > 0 || params_rest !== undefined) {
-		for (let i = 0; i < evaluated_args.length; i++) {
-			const arg = evaluated_args[i];
-			const expected_type = params[i] ?? params_rest;
+		if (expected_arity !== args.length)
+			throw new CompileError(token, `Function requires ${expected_arity} parameters, got ${args.length}.`);
 
-			if (!satisfies(arg.return_type, expected_type))
-				throw new CompileError(token, `Parameter ${i + 1} to function (${args[i].toString()}, type ${arg.return_type.type}) doesn't match expected type ${expected_type.type}.`);
+		const evaluated_args = args.map(arg => check_val(env, arg));
 
-			if (arg.return_type.type === ComplexType.POLY && arg.return_type.narrowable) {
-				console.log('assinging to', arg.toString(), arg.return_type);
-				Object.assign(arg.return_type, narrow(arg.return_type, expected_type));
+		if (params.length > 0 || params_rest !== undefined) {
+			for (let i = 0; i < evaluated_args.length; i++) {
+				const arg = evaluated_args[i];
+				const expected_type = params[i] ?? params_rest;
+
+				if (!satisfies(arg.return_type, expected_type))
+					throw new CompileError(token, `Parameter ${i + 1} to function (${args[i].toString()}, type ${arg.return_type.type}) doesn't match expected type ${expected_type.type}.`);
+
+				if (arg.return_type.type === ComplexType.POLY && arg.return_type.narrowable)
+					Object.assign(arg.return_type, narrow(arg.return_type, expected_type));
 			}
 		}
+
+		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, new Set(), func_type.return_type) : func_expr;
+		const captured_symbols = evaluated_args.reduce((a, c) => a.union(c.captured_symbols), new Set<string>());
+
+		return new SExpr(s_op, evaluated_args, captured_symbols, func_type.return_type, token);
 	}
+	else {
+		const evaluated_args = args.map(arg => check_val(env, arg));
+		const return_type = { type: ComplexType.POLY, sym: Symbol(token.lexeme), narrowable: true } as const;
 
-	const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, new Set(), func_type.return_type) : func_expr;
-	const captured_symbols = evaluated_args.reduce((a, c) => a.union(c.captured_symbols), new Set<string>());
+		if (func_expr.return_type.narrowable) {
+			Object.assign(func_expr.return_type, {
+				type: ComplexType.FUNCTION,
+				arity: evaluated_args.length,
+				params: evaluated_args.map(a => a.return_type),
+				return_type
+			});
+		}
 
-	return new SExpr(s_op, evaluated_args, captured_symbols, func_type.return_type, token);
+		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, new Set(), return_type) : func_expr;
+		const captured_symbols = evaluated_args.reduce((a, c) => a.union(c.captured_symbols), new Set<string>());
+		return new SExpr(s_op, evaluated_args, captured_symbols, return_type, token);
+	}
 }
 
 export function check_val(env: Environment<Expr>, val: LVal): Expr {

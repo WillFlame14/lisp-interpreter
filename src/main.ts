@@ -61,7 +61,7 @@ export function run(source: string) {
 	console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
 
 	const exprs = static_check(expanded);
-	console.log('static checked', exprs.map(e => e.toString()).join('\n'));
+	console.log(`static checked:\n${exprs.map(e => e.toString()).join('\n')}`);
 
 	return interpret(exprs);
 	// fs.writeFileSync('output/out.s', compile(expanded));

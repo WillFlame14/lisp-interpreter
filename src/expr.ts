@@ -89,7 +89,7 @@ function logType(type: ExprType): string {
 	}
 
 	if (type.type === ComplexType.POLY)
-		return type.sym.toString();
+		return type.sym.description ?? '';
 
 	return type.type;
 }
@@ -172,7 +172,7 @@ export class FnExpr implements IExpr {
 		const name = this.name === undefined ? '' : ` ${this.name}`;
 		const params = this.params.map(p => p.lexeme).join(' ');
 		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
-		return `(FUNCTION${name}: [${params}] ${this.body.toString()}${captures}, returns ${logType(this.return_type)})`;
+		return `(FUNCTION${name}: [${params}] ${this.body.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
 
@@ -195,7 +195,7 @@ export class SExpr implements IExpr {
 
 	toString(): string {
 		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
-		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}${captures}, returns ${logType(this.return_type)})`;
+		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
 
@@ -216,7 +216,7 @@ export class IfExpr implements IExpr {
 
 	toString(): string {
 		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
-		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}${captures}, returns ${logType(this.return_type)})`;
+		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
 
@@ -236,7 +236,7 @@ export class LetExpr implements IExpr {
 	toString(): string {
 		const bindings = this.bindings.map(b => `${b.key.lexeme} := ${b.value.toString()}`).join(', ');
 		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
-		return `(LET: [${bindings}] ${this.body.toString()}${captures}, returns ${logType(this.return_type)})`;
+		return `(LET: [${bindings}] ${this.body.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
 
