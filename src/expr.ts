@@ -1,3 +1,4 @@
+import { CompileError } from './checker.ts';
 import { Token } from './token.ts';
 import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
 
@@ -36,6 +37,23 @@ export enum ComplexType {
 	FUNCTION = 'FUNCTION', OBJECT = 'OBJECT', POLY = 'POLY'
 }
 
+export function satisfies(type: ExprType, expected: ExprType) {
+	if (type.type === BaseType.ANY || expected.type === BaseType.ANY || type.type === ComplexType.POLY || expected.type === ComplexType.POLY)
+		return true;
+
+	return type.type === expected.type;
+}
+
+export function narrow(type: ExprType, constraint: ExprType) {
+	if (!satisfies(type, constraint))
+		throw new Error(`Can't narrow type ${JSON.stringify(type)} to constraint ${JSON.stringify(constraint)}`);
+
+	if (constraint.type === BaseType.ANY)
+		return type;
+
+	return constraint;
+}
+
 export type ExprType = { type: BaseType } |
 	{
 		type: ComplexType.FUNCTION,
@@ -46,7 +64,8 @@ export type ExprType = { type: BaseType } |
 	} |
 	{
 		type: ComplexType.POLY,
-		sym: symbol
+		sym: symbol,
+		narrowable: boolean
 	};
 
 export interface IExpr {
@@ -65,7 +84,8 @@ function logType(type: ExprType): string {
 	if (type.type === ComplexType.FUNCTION) {
 		const { params, params_rest, return_type } = type;
 
-		return `FUNCTION (${params.map(logType).join(', ')}${params_rest !== undefined ? ` & ${logType(params_rest)}`: ''}) => ${logType(return_type)}`;
+		const log_params = `${params.map(logType).join(', ')}${params_rest !== undefined ? ` & ${logType(params_rest)}`: ''}`;
+		return `FN (${log_params}) => ${logType(return_type)}`;
 	}
 
 	if (type.type === ComplexType.POLY)
@@ -149,7 +169,10 @@ export class FnExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(FUNCTION${this.name === undefined ? '' : ` ${this.name}`}: [${this.params.map(p => p.lexeme).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
+		const name = this.name === undefined ? '' : ` ${this.name}`;
+		const params = this.params.map(p => p.lexeme).join(' ');
+		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		return `(FUNCTION${name}: [${params}] ${this.body.toString()}${captures}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -171,7 +194,8 @@ export class SExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
+		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}${captures}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -191,7 +215,8 @@ export class IfExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
+		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}${captures}, returns ${logType(this.return_type)})`;
 	}
 }
 
@@ -209,7 +234,9 @@ export class LetExpr implements IExpr {
 	}
 
 	toString(): string {
-		return `(LET: [${this.bindings.map(b => `${b.key.lexeme} ${b.value.toString()}`).join(' ')}] ${this.body.toString()}, captures ${Array.from(this.captured_symbols).join()}, returns ${logType(this.return_type)})`;
+		const bindings = this.bindings.map(b => `${b.key.lexeme} := ${b.value.toString()}`).join(', ');
+		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		return `(LET: [${bindings}] ${this.body.toString()}${captures}, returns ${logType(this.return_type)})`;
 	}
 }
 
