@@ -1,14 +1,18 @@
 (defn empty? [list] (= (count list) 0))
 
+(defn first [list] (nth list 0))
+
+(defn last [list] (nth list (- (count list) 1)))
+
 (defn map [f list]
   (if (empty? list)
     list
-    (cons (f (peek list)) (map f (pop list)))))
+    (cons (f (first list)) (map f (pop list)))))
 
 (defn filter [f list]
   (if (empty? list)
     list
-    (let [head (peek list)
+    (let [head (first list)
           rest (filter f (pop list))]
       (if (f head) 
         (cons head rest)
@@ -19,7 +23,7 @@
 (defn concat [x y]
   (if (empty? x)
     y
-    (cons (peek x) (concat (pop x) y))))
+    (cons (first x) (concat (pop x) y))))
 
 (defn not= [x y] (not (= x y)))
 

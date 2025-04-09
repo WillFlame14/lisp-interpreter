@@ -2,7 +2,7 @@ import { Environment } from './environment.ts';
 import { BaseType, ExprType } from './expr.ts';
 import { Callable, RuntimeError, truthy } from './interpreter.ts';
 import { Token } from './token.ts';
-import { LValBoolean, LValNil, LValNumber, RuntimeList, RuntimeNumber, RuntimeVal } from './types.ts';
+import { logRuntimeVal, LValBoolean, LValNil, LValNumber, RuntimeList, RuntimeNumber, RuntimeVal } from './types.ts';
 
 type NativeFunc = Omit<Callable, 'toString'> & { name: string, return_type: ExprType };
 
@@ -119,9 +119,7 @@ const io_funcs: NativeFunc[] = [
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.NIL },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
-			for (const arg of args)
-				console.log(JSON.stringify(arg));
-
+			console.log(args.map(logRuntimeVal));
 			return new LValNil();
 		}
 	}

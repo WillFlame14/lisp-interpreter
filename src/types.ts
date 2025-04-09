@@ -103,6 +103,30 @@ export class LValVector {
 	}
 }
 
+export function logRuntimeVal(val: RuntimeVal): string {
+	switch(val.type) {
+		case BaseType.NUMBER:
+		case BaseType.STRING:
+		case BaseType.BOOLEAN:
+			return val.value.toString();
+
+		case BaseType.NIL:
+			return 'nil';
+
+		case BaseType.SYMBOL:
+			return val.value.lexeme;
+
+		case BaseType.LIST:
+			return `(${val.value.map(logRuntimeVal).join(' ')})`;
+
+		case BaseType.VECTOR:
+			return `[${val.value.map(logRuntimeVal).join(' ')}]`;
+
+		case ComplexType.FUNCTION:
+			return `<function ${val.name}>`;
+	}
+}
+
 export type RuntimeVal = RuntimeNumber | RuntimeString | RuntimeBoolean | RuntimeNil | RuntimeSymbol | RuntimeList | RuntimeVector | RuntimeFunction;
 
 export type RuntimeNumber = {

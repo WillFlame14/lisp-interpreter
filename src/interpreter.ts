@@ -3,7 +3,7 @@ import { BaseType, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr,
 import { runtimeError } from './main.ts';
 import { native_funcs } from './native.ts';
 import { Token } from './token.ts';
-import { LValBoolean, LValNil, LValNumber, LValString, LValSymbol, RuntimeVal } from './types.ts';
+import { logRuntimeVal, LValBoolean, LValNil, LValNumber, LValString, LValSymbol, RuntimeVal } from './types.ts';
 
 export class RuntimeError extends Error {
 	token?: Token;
@@ -169,7 +169,7 @@ export function interpret_expr(env: Environment<RuntimeVal>, expr: Expr): Runtim
 	return interpret_s(env, expr);
 }
 
-export function interpret(program: Expr[]) {
+export function interpret(program: Expr[]): string {
 	const environment = new Environment<RuntimeVal>();
 
 	for (const func of native_funcs)
@@ -180,12 +180,11 @@ export function interpret(program: Expr[]) {
 			interpret_expr(environment, program[i]);
 
 		if (program.length > 0)
-			return interpret_expr(environment, program[program.length - 1]);
+			return logRuntimeVal(interpret_expr(environment, program[program.length - 1]));
 	}
 	catch (err) {
 		if (err instanceof RuntimeError)
 			runtimeError(err);
 	}
-
-	return [];
+	return '';
 }

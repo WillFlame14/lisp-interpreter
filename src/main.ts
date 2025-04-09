@@ -8,8 +8,10 @@ import { interpret, RuntimeError } from './interpreter.ts';
 import { compile } from './asm.ts';
 import { macroexpand } from './reader.ts';
 import { CompileError, static_check } from './checker.ts';
+import { logRuntimeVal } from './types.ts';
 
 let hadError = false, hadCompileError = false, hadRuntimeError = false;
+const stdlib = fs.readFileSync('src/stdlib.clj', 'utf8');
 
 function main() {
 	const args = process.argv.slice(2);
@@ -47,7 +49,7 @@ function prompt() {
 }
 
 export function run(source: string) {
-	const tokens = scanTokens(source);
+	const tokens = scanTokens(stdlib + '\n' + source);
 	const program = parse(tokens);
 
 	if (hadError) {

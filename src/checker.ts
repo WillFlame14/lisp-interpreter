@@ -113,21 +113,18 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 	if (body.return_type.type === ComplexType.POLY)
 		body.return_type.narrowable = false;
 
-	if (def) {
-		const fn = new FnExpr(def, params, body, { type: BaseType.NIL }, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
+	const return_type = {
+		type: ComplexType.FUNCTION as const,
+		arity: params.length,
+		params: params.map(p => nested.retrieve(p).return_type),
+		return_type: body.return_type
+	};
+	const fn = new FnExpr(def, params, body, return_type, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
+
+	if (def)
 		env.define(name!.value.lexeme, fn);
-		return fn;
-	}
-	else {
-		const return_type = {
-			type: ComplexType.FUNCTION as const,
-			arity: params.length,
-			params: params.map(p => nested.retrieve(p).return_type),
-			return_type: body.return_type
-		};
-		const fn = new FnExpr(def, params, body, return_type, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
-		return fn;
-	}
+
+	return fn;
 }
 
 function check_let(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
