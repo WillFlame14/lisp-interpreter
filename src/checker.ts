@@ -1,5 +1,5 @@
 import { Environment } from './environment.ts';
-import { BaseType, Binding, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, narrow, satisfies, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
+import { Binding, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, narrow, PrimaryExpr, satisfies, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
 import { compileError } from './main.ts';
 import { native_funcs } from './native.ts';
 import { Token, TokenType } from './token.ts';
@@ -21,20 +21,20 @@ export function argError(op: LValSymbol, args: LVal[]) {
 function check_symbol(env: Environment<Expr>, val: LValSymbol) {
 	const res = env.retrieve(val.value);
 
-	return new SymbolExpr(val.value, new Set([val.value.lexeme]), res.return_type);
+	return new SymbolExpr(val.value, [val.value], res.return_type);
 }
 
 function check_list(env: Environment<Expr>, val: LValList) {
-	const children = val.value.map(v => check_val(env, v));
+	const children = val.value.map(v => check_primary(env, v));
 	return new ListExpr(children, val.l_paren);
 }
 
 function check_vector(env: Environment<Expr>, val: LValVector) {
-	const children = val.value.map(v => check_val(env, v));
+	const children = val.value.map(v => check_primary(env, v));
 	return new VectorExpr(children, val.l_paren);
 }
 
-function check_primary(env: Environment<Expr>, val: LVal) {
+function check_primary(env: Environment<Expr>, val: LVal): PrimaryExpr {
 	if (val instanceof LValNumber || val instanceof LValString || val instanceof LValBoolean || val instanceof LValNil)
 		return val;
 
@@ -60,7 +60,12 @@ function check_if(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
 	if (!satisfies(false_child.return_type, true_child.return_type))
 		throw new CompileError(op.value, `Types of true child (${JSON.stringify(true_child.return_type)}) and false child (${JSON.stringify(false_child.return_type)}) don't match.`);
 
-	const captured_symbols = cond.captured_symbols.union(true_child.captured_symbols).union(false_child.captured_symbols);
+	const captured_symbols = cond.captured_symbols;
+
+	for (const sym of true_child.captured_symbols.concat(false_child.captured_symbols)) {
+		if (!captured_symbols.some(s => s.lexeme === sym.lexeme))
+			captured_symbols.push(sym);
+	}
 
 	return new IfExpr(cond, true_child, false_child, captured_symbols, true_child.return_type);
 }
@@ -87,7 +92,7 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 	if (!(params_expr instanceof LValVector) || !params_expr.value.every(param => param instanceof LValSymbol))
 		throw new CompileError(op.value, 'Expected a vector of symbols for parameters.');
 
-	const param_symbols = new Set(params_expr.value.map(p => p.value.lexeme));
+	const param_symbols = new Set(params_expr.value.map(p => p.value));
 	const params = params_expr.value.map(lval => lval.value);
 
 	const nested = new Environment(env);
@@ -95,7 +100,7 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 	for (let i = 0; i < params.length; i++) {
 		const param = params[i].lexeme;
 		const token = { type: TokenType.SYMBOL, literal: undefined, lexeme: param, line: -1 };
-		nested.define(param, new SymbolExpr(token, new Set<string>(), { type: ComplexType.POLY, sym: Symbol(param), narrowable: true }));
+		nested.define(param, new SymbolExpr(token, [], { type: ComplexType.POLY, sym: Symbol(param), narrowable: true }));
 	}
 
 	if (name !== undefined) {
@@ -105,7 +110,7 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 			params: params.map(p => nested.retrieve(p).return_type),
 			return_type: { type: ComplexType.POLY, sym: Symbol(name.value.lexeme), narrowable: true }
 		} as const;
-		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), return_type, new Set<string>(), op.value, { name: name.value.lexeme }));
+		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), return_type, [], op.value, { name: name.value.lexeme }));
 	}
 
 	const body = check_val(nested, body_expr);
@@ -119,7 +124,17 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 		params: params.map(p => nested.retrieve(p).return_type),
 		return_type: body.return_type
 	};
-	const fn = new FnExpr(def, params, body, return_type, body.captured_symbols.difference(param_symbols), op.value, { name: name?.value.lexeme });
+
+	const captured_symbols = body.captured_symbols;
+
+	for (const { lexeme } of param_symbols) {
+		const found = captured_symbols.findIndex(s => s.lexeme === lexeme);
+
+		if (found !== -1)
+			captured_symbols.splice(found, 1);
+	}
+
+	const fn = new FnExpr(def, params, body, return_type, captured_symbols, op.value, { name: name?.value.lexeme });
 
 	if (def)
 		env.define(name!.value.lexeme, fn);
@@ -154,7 +169,7 @@ function check_let(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
 
 	const body = check_val(nested, body_expr);
 
-	return new LetExpr(bindings, body, body.captured_symbols.difference(local_vars), body.return_type);
+	return new LetExpr(bindings, body, body.captured_symbols.filter(s => !local_vars.has(s.lexeme)), body.return_type);
 }
 
 function check_do(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
@@ -162,12 +177,16 @@ function check_do(env: Environment<Expr>, op: LValSymbol, args: LVal[]) {
 		return new LValNil();
 
 	const bodies: Expr[] = [];
-	let captured_symbols = new Set<string>();
+	const captured_symbols: Token[] = [];
 
 	for (const arg of args) {
 		const body = check_val(env, arg);
 		bodies.push(body);
-		captured_symbols = captured_symbols.union(body.captured_symbols);
+
+		for (const sym of body.captured_symbols) {
+			if (!captured_symbols.some(s => s.lexeme === sym.lexeme))
+				captured_symbols.push(sym);
+		}
 	}
 
 	return new DoExpr(bodies, captured_symbols, bodies[bodies.length - 1].return_type, op.value);
@@ -209,8 +228,8 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 			}
 		}
 
-		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, new Set(), func_type.return_type) : func_expr;
-		const captured_symbols = evaluated_args.reduce((a, c) => a.union(c.captured_symbols), new Set<string>());
+		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, [], func_type.return_type) : func_expr;
+		const captured_symbols = evaluated_args.reduce<Token[]>((a, c) => a.concat(c.captured_symbols.filter(s => !a.some(as => as.lexeme === s.lexeme))), []);
 
 		return new SExpr(s_op, evaluated_args, captured_symbols, func_type.return_type, token);
 	}
@@ -227,8 +246,8 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 			});
 		}
 
-		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, new Set(), return_type) : func_expr;
-		const captured_symbols = evaluated_args.reduce((a, c) => a.union(c.captured_symbols), new Set<string>());
+		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, [], return_type) : func_expr;
+		const captured_symbols = evaluated_args.reduce<Token[]>((a, c) => a.concat(c.captured_symbols.filter(s => !a.some(as => as.lexeme === s.lexeme))), []);
 		return new SExpr(s_op, evaluated_args, captured_symbols, return_type, token);
 	}
 }
@@ -292,7 +311,7 @@ export function static_check(program: LVal[]) {
 		};
 		const dummy_token = { type: TokenType.NIL, literal: undefined, lexeme: '', line: -1 };
 		const optionals = { name, params_rest: params_rest !== undefined ? dummy_token : undefined };
-		env.define(name, new FnExpr(true, params.map(_ => dummy_token), new LValNil(), type, new Set<string>(), dummy_token, optionals));
+		env.define(name, new FnExpr(true, params.map(_ => dummy_token), new LValNil(), type, [], dummy_token, optionals));
 	}
 
 	try {

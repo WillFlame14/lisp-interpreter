@@ -1,6 +1,9 @@
 import { TEnvVar, TranslatorEnv, VarType } from './environment.ts';
-import { LVal, LValBoolean, LValList, LValNil, LValNumber, LValString, LValSymbol, LValVector } from './types.ts';
-import { argError, RuntimeError } from './interpreter.ts';
+import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
+import { DoExpr, Expr, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
+import { CompileError } from './checker.ts';
+import { RuntimeError } from './interpreter.ts';
+import { runtimeError } from './main.ts';
 
 const nativeMap = {
 	'+': 'plus',
@@ -26,6 +29,18 @@ const STRING_MASK = 0b101;
 const NULL = 0;
 
 const REGISTER_PARAMS = ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9'] as const;
+
+function sanitize(label: string) {
+	return label.replaceAll('+', '#plus')
+		.replaceAll('-', '#minus')
+		.replaceAll('*', '#star')
+		.replaceAll('/', '#slash')
+		.replaceAll('=', '#eq')
+		.replaceAll('<', '#lt')
+		.replaceAll('>', '#gt')
+		.replaceAll('!', '#excl')
+		.replaceAll('&', '#and');
+}
 
 function format_mem(register: string, index: number) {
 	if (index >= 0)
@@ -94,36 +109,39 @@ class Translator {
 		throw new Error();
 	}
 
-	compile_symbol(expr: LValSymbol) {
-		if (expr.value.lexeme in nativeMap) {
-			this.asm.push(`mov rax, __${nativeMap[expr.value.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
+	compile_symbol(expr: SymbolExpr) {
+		if (expr.name.lexeme in nativeMap) {
+			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
 			return;
 		}
 
-		const entry = this.env.retrieve(expr.value);
+		const entry = this.env.retrieve(expr.name);
 		this.asm.push(...get_mem('rax', entry));
 	}
 
-	compile_primary(expr: LVal) {
+	compile_primary(expr: Expr) {
 		if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil)
 			this.compile_literal(expr);
-		else if (expr instanceof LValSymbol)
+
+		else if (expr instanceof SymbolExpr)
 			this.compile_symbol(expr);
-		else if (expr instanceof LValVector)
+
+		else if (expr instanceof VectorExpr)
 			this.compile_vector(expr);
-		else if (expr instanceof LValList)
+
+		else if (expr instanceof ListExpr)
 			this.compile_list(expr);
 	}
 
-	compile_vector(expr: LValVector) {
-		if (expr.value.length === 0) {
+	compile_vector(expr: VectorExpr) {
+		if (expr.children.length === 0) {
 			this.asm.push(`mov rax, dword 4`);	// NULL is 0, with list tag 100
 			return;
 		}
 	}
 
-	compile_list(expr: LValList) {
-		if (expr.value.length === 0) {
+	compile_list(expr: ListExpr) {
+		if (expr.children.length === 0) {
 			this.asm.push(`mov rax, dword 4`);	// NULL is 0, with list tag 100
 			return;
 		}
@@ -135,12 +153,12 @@ class Translator {
 			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
 
 		// Compute children and push onto stack
-		for (const child of expr.value) {
+		for (const child of expr.children) {
 			this.compile_primary(child);
 			this.asm.push('push rax');
 		}
 
-		for (let i = 0; i < expr.value.length; i++) {
+		for (let i = 0; i < expr.children.length; i++) {
 			this.asm.push(
 				'mov rax, 16',
 				'call __allocate',
@@ -150,7 +168,7 @@ class Translator {
 				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
 			);
 
-			if (i < expr.value.length - 1)
+			if (i < expr.children.length - 1)
 				this.asm.push('push rax');											// store 'next' on stack
 		}
 
@@ -162,21 +180,21 @@ class Translator {
 		this.asm.push('call __toList');
 	}
 
-	compile_s(op: LValSymbol | LValList, args: LVal[]) {
-		const save_reg_params = 1 + Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
+	compile_s(expr: SExpr) {
+		const save_reg_params = Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
 
-		// Save first 4 register params if needed
+		// Save register params if needed
 		for (let i = 0; i < save_reg_params; i++)
 			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
 
 		// Compute all args and push onto stack
-		for (const arg of args) {
+		for (const arg of expr.children) {
 			this.compile_expr(arg);
 			this.asm.push('push rax');
 		}
 
 		// Get closure in rax
-		this.compile_expr(op);
+		this.compile_expr(expr.op);
 
 		this.asm.push(
 			'mov rbx, 7',
@@ -188,7 +206,7 @@ class Translator {
 		// Pass closure as first param
 		this.asm.push(`mov ${REGISTER_PARAMS[0]}, rax`);
 
-		const reg_params = Math.min(REGISTER_PARAMS.length - 1, args.length);
+		const reg_params = Math.min(REGISTER_PARAMS.length - 1, expr.children.length);
 
 		// Pop remaining arguments into the param registers (leave rest on stack)
 		for (let i = 0; i < reg_params; i++)
@@ -197,7 +215,7 @@ class Translator {
 		// Call function
 		this.asm.push('call __removeTag', 'call [rax]');
 
-		const stack_params = args.length - (REGISTER_PARAMS.length - 1);
+		const stack_params = expr.children.length - (REGISTER_PARAMS.length - 1);
 
 		if (stack_params > 0)
 			this.asm.push(`add rsp, ${stack_params * 8}`);
@@ -207,11 +225,9 @@ class Translator {
 			this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
 	}
 
-	compile_if(op: LValSymbol, args: LVal[]) {
-		if (args.length < 2 || args.length > 3)
-			throw argError(op, args);
+	compile_if(expr: IfExpr) {
+		const { cond, true_child, false_child } = expr;
 
-		const [cond, true_child, false_child = new LValNil()] = args;
 		const label_true = `label_${this.getId()}`;
 		const label_after = `label_${this.getId()}`;
 
@@ -226,30 +242,17 @@ class Translator {
 		this.asm.push(`${label_after}:`);
 	}
 
-	compile_let(op: LValSymbol, args: LVal[]) {
-		if (args.length !== 2)
-			throw argError(op, args);
-
-		const [bindings, body] = args;
-
-		if (!(bindings instanceof LValVector) || bindings.value.length % 2 !== 0)
-			throw new RuntimeError(op.value, 'Expected an even number of forms in bindings vector.');
-
+	compile_let(expr: LetExpr) {
+		const { bindings, body } = expr;
 		const enclosing = this.env;
 		const nested = new TranslatorEnv(enclosing, true);
 
 		this.env = nested;
 
-		for (let i = 0; i < bindings.value.length; i += 2) {
-			const symbol = bindings.value[i];
-			const value = bindings.value[i + 1];
-
-			if (!(symbol instanceof LValSymbol))
-				throw new RuntimeError(op.value, 'Expected a symbol in bindings vector.');
-
+		for (const { key, value } of bindings) {
 			this.compile_expr(value);
 			this.asm.push('push rax');
-			nested.bind(symbol.value.lexeme, VarType.LOCAL);
+			nested.bind(key.lexeme, VarType.LOCAL);
 		}
 
 		try {
@@ -261,27 +264,14 @@ class Translator {
 		}
 	}
 
-	compile_fn(op: LValSymbol, args: LVal[]) {
-		if (args.length < 2)
-			throw argError(op, args);
-
-		let name: LValSymbol | undefined;
-		let params: LVal;
-		let body: LVal;
-
-		if (args[0] instanceof LValSymbol)
-			[name, params, body] = args;
-		else
-			[params, body] = args;
-
-		if (!(params instanceof LValVector) || !params.value.every(param => param instanceof LValSymbol))
-			throw new RuntimeError(op.value, 'Expected a vector of symbols.');
+	compile_fn(expr: FnExpr) {
+		const { def, name, params, body, captured_symbols } = expr;
 
 		const label_after = `after_${this.getId()}`;
-		const label_fn = name === undefined ? `anon${this.getId()}` : `named${this.getId()}_${name.value.lexeme}`;
+		const label_fn = name === undefined ? `anon${this.getId()}` : `named${this.getId()}_${sanitize(name)}`;
 
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing);
+		const nested = new TranslatorEnv(enclosing, true);
 
 		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dq 0`));
 
@@ -301,12 +291,15 @@ class Translator {
 		for (const key of Object.keys(enclosing.symbolMap))
 			nested.bind(key, VarType.CLOSURE);
 
-		for (const token of params.value)
-			nested.bind(token.value.lexeme, VarType.PARAM);
+		for (const token of params)
+			nested.bind(token.lexeme, VarType.PARAM);
 
 		// Allow recursion
 		if (name !== undefined)
-			nested.bind(name.value.lexeme, VarType.FUNC, `${label_fn}_closure`);
+			nested.bind(name, VarType.FUNC, `${label_fn}_closure`);
+
+		if (def)
+			this.env.bind(name!, VarType.FUNC, `${label_fn}_closure`);
 
 		try {
 			this.env = nested;
@@ -324,121 +317,59 @@ class Translator {
 		}
 	}
 
-	compile_defn(op: LValSymbol, args: LVal[]) {
-		if (args.length !== 3)
-			throw argError(op, args);
+	compile_do(expr: DoExpr) {
+		const { bodies } = expr;
 
-		const [name, params, body] = args;
-
-		if (!(name instanceof LValSymbol))
-			throw new RuntimeError(op.value, 'Functions defined using defn must have a name.');
-
-		if (!(params instanceof LValVector) || !params.value.every(param => param instanceof LValSymbol))
-			throw new RuntimeError(op.value, 'Expected a vector of symbols.');
-
-		const label_after = `after_${this.getId()}`;
-		const label_fn = `named${this.getId()}_${name.value.lexeme}`;
-
-		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing);
-
-		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dq 0`));
-
-		this.asm.push(
-			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
-				if (symbol.type === VarType.FUNC)
-					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
-				else
-					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
-			}),
-			`jmp ${label_after}`,
-			`${label_fn}:`,
-			'push rbp',
-			'mov rbp, rsp');
-
-		// Set up closure vars
-		for (const key of Object.keys(enclosing.symbolMap))
-			nested.bind(key, VarType.CLOSURE);
-
-		for (const token of params.value)
-			nested.bind(token.value.lexeme, VarType.PARAM);
-
-		// Allow recursion
-		nested.bind(name.value.lexeme, VarType.FUNC, `${label_fn}_closure`);
-		this.env.bind(name.value.lexeme, VarType.FUNC, `${label_fn}_closure`);
-
-		try {
-			this.env = nested;
-			this.compile_expr(body);
-			this.asm.push(
-				'pop rbp',
-				'ret',
-				`${label_after}:`,
-				`mov rax, ${label_fn}_closure`,
-				`call __toClosure`
-			);
-		}
-		finally {
-			this.env = enclosing;
-		}
-	}
-
-	compile_do(_op: LValSymbol, args: LVal[]) {
-		if (args.length === 0) {
+		if (bodies.length === 0) {
 			this.asm.push('mov rax, 0');
 			return;
 		}
 
-		for (const arg of args)
-			this.compile_expr(arg);
+		for (const body of bodies)
+			this.compile_expr(body);
 	}
 
-	compile_expr(expr: LVal) {
-		if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil) {
+	compile_loop(_expr: LoopExpr) {
+
+	}
+
+	compile_recur(_expr: RecurExpr) {
+
+	}
+
+	compile_expr(expr: Expr) {
+		if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil)
 			this.compile_literal(expr);
-		}
-		else if (expr instanceof LValSymbol) {
+
+		else if (expr instanceof SymbolExpr)
 			this.compile_symbol(expr);
-		}
-		else if (expr instanceof LValVector) {
+
+		else if (expr instanceof VectorExpr)
 			this.compile_vector(expr);
-		}
-		else if (expr instanceof LValList) {
-			const [op, ...args] = expr.value;
 
-			if (op instanceof LValSymbol) {
-				const name = op.value.lexeme;
+		else if (expr instanceof ListExpr)
+			this.compile_list(expr);
 
-				if (name === 'quote')
-					this.compile_primary(args[0]);
+		else if (expr instanceof IfExpr)
+			this.compile_if(expr);
 
-				else if (name === 'if')
-					this.compile_if(op, args);
+		else if (expr instanceof FnExpr)
+			this.compile_fn(expr);
 
-				else if (name === 'fn')
-					this.compile_fn(op, args);
+		else if (expr instanceof LetExpr)
+			this.compile_let(expr);
 
-				else if (name === 'let')
-					this.compile_let(op, args);
+		else if (expr instanceof DoExpr)
+			this.compile_do(expr);
 
-				else if (name === 'defn')
-					this.compile_defn(op, args);
+		else if (expr instanceof LoopExpr)
+			this.compile_loop(expr);
 
-				else if (name === 'do')
-					this.compile_do(op, args);
+		else if (expr instanceof RecurExpr)
+			this.compile_recur(expr);
 
-				else
-					this.compile_s(op, args);
-
-				return;
-			}
-			else if (op instanceof LValList) {
-				this.compile_s(op, args);
-				return;
-			}
-
-			throw new Error(`Expected symbol, got ${JSON.stringify(op)}.`);
-		}
+		else
+			this.compile_s(expr);
 	}
 }
 
@@ -446,11 +377,21 @@ function indent(s: string) {
 	return !(s.endsWith(':') || s.startsWith('global') || s.startsWith('extern') || s.startsWith('section') || s.length === 0);
 }
 
-export function compile(program: LVal[]) {
+export function compile(program: Expr[]) {
 	const translator = new Translator();
 
-	for (const expr of program)
-		translator.compile_expr(expr);
+	try {
+		for (const expr of program)
+			translator.compile_expr(expr);
+	}
+	catch (err) {
+		if (err instanceof RuntimeError)
+			runtimeError(err);
+
+		throw err;
+
+		return '';
+	}
 
 	return [
 		'extern __alloc_init',

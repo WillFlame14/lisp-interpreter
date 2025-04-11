@@ -7,7 +7,7 @@ export type LVal = LValNumber | LValString | LValBoolean | LValNil | LValSymbol 
 export class LValNumber implements IExpr {
 	readonly type = BaseType.NUMBER;
 	readonly return_type = { type: BaseType.NUMBER };
-	readonly captured_symbols = new Set<string>();
+	readonly captured_symbols: Token[] = [];
 	value: number;
 
 	constructor(value: number) {
@@ -22,7 +22,7 @@ export class LValNumber implements IExpr {
 export class LValString implements IExpr {
 	readonly type = BaseType.STRING;
 	readonly return_type = { type: BaseType.STRING };
-	readonly captured_symbols = new Set<string>();
+	readonly captured_symbols: Token[] = [];
 	value: string;
 
 	constructor(value: string) {
@@ -37,7 +37,7 @@ export class LValString implements IExpr {
 export class LValBoolean implements IExpr {
 	readonly type = BaseType.BOOLEAN;
 	readonly return_type = { type: BaseType.BOOLEAN };
-	readonly captured_symbols = new Set<string>();
+	readonly captured_symbols: Token[] = [];
 	value: boolean;
 
 	constructor(value: boolean) {
@@ -52,7 +52,7 @@ export class LValBoolean implements IExpr {
 export class LValNil implements IExpr {
 	readonly type = BaseType.NIL;
 	readonly return_type = { type: BaseType.NIL };
-	readonly captured_symbols = new Set<string>();
+	readonly captured_symbols: Token[] = [];
 	readonly value = null;
 
 	toString(): string {

@@ -15,7 +15,7 @@ const keywordMap = {
 } as const;
 
 export function scanTokens(source: string) {
-	let start = 0, current = 0, line = 0;
+	let start = 0, current = 0, line = 1;
 	const tokens: Token[] = [];
 
 	const addToken = (type: TokenType, literal?: unknown) => {
@@ -69,7 +69,7 @@ export function scanTokens(source: string) {
 					break;
 				}
 
-				if (/[a-zA-Z_+-/*=<>!&?]/.test(char)) {
+				if (/[a-zA-Z_+\-/*=<>!&?]/.test(char)) {
 					// Scan symbol
 					while (/[a-zA-Z0-9_+\-*/=<>!&?]/.test(source.charAt(current)) && current < source.length)
 						current++;

@@ -8,7 +8,6 @@ import { interpret, RuntimeError } from './interpreter.ts';
 import { compile } from './asm.ts';
 import { macroexpand } from './reader.ts';
 import { CompileError, static_check } from './checker.ts';
-import { logRuntimeVal } from './types.ts';
 
 let hadError = false, hadCompileError = false, hadRuntimeError = false;
 const stdlib = fs.readFileSync('src/stdlib.clj', 'utf8');
@@ -49,7 +48,7 @@ function prompt() {
 }
 
 export function run(source: string) {
-	const tokens = scanTokens(stdlib + '\n' + source);
+	const tokens = scanTokens(source);
 	const program = parse(tokens);
 
 	if (hadError) {
@@ -65,17 +64,17 @@ export function run(source: string) {
 	const exprs = static_check(expanded);
 	console.log(`static checked:\n${exprs.map(e => e.toString()).join('\n')}`);
 
-	return interpret(exprs);
-	// fs.writeFileSync('output/out.s', compile(expanded));
+	// return interpret(exprs);
+	fs.writeFileSync('output/out.s', compile(exprs));
 
-	// try {
-	// 	const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
-	// 	return proc.stdout.toString();
-	// }
-	// catch (err) {
-	// 	console.log(err);
-	// 	return;
-	// }
+	try {
+		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+		return proc.stdout.toString();
+	}
+	catch (err) {
+		console.log(err);
+		return;
+	}
 }
 
 export function error(line: number, message: string) {

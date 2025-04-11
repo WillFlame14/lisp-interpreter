@@ -1,4 +1,3 @@
-import { CompileError } from './checker.ts';
 import { Token } from './token.ts';
 import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
 
@@ -69,7 +68,7 @@ export type ExprType = { type: BaseType } |
 	};
 
 export interface IExpr {
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 	toString: () => string;
 }
@@ -96,10 +95,10 @@ function logType(type: ExprType): string {
 
 export class SymbolExpr implements IExpr {
 	name: Token;
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 
-	constructor(name: Token, captured_symbols: Set<string>, return_type: ExprType) {
+	constructor(name: Token, captured_symbols: Token[], return_type: ExprType) {
 		this.name = name;
 		this.captured_symbols = captured_symbols;
 		this.return_type = return_type;
@@ -111,14 +110,14 @@ export class SymbolExpr implements IExpr {
 }
 
 export class ListExpr implements IExpr {
-	children: Expr[];
-	readonly captured_symbols = new Set<string>();
+	children: PrimaryExpr[];
+	readonly captured_symbols: Token[] = [];
 	readonly return_type = { type: BaseType.LIST };
 
 	/** The opening parenthesis, used for reporting errors. */
 	l_paren: Token;
 
-	constructor(children: Expr[], l_paren: Token) {
+	constructor(children: PrimaryExpr[], l_paren: Token) {
 		this.children = children;
 		this.l_paren = l_paren;
 	}
@@ -129,14 +128,14 @@ export class ListExpr implements IExpr {
 }
 
 export class VectorExpr implements IExpr {
-	children: Expr[];
-	readonly captured_symbols = new Set<string>();
+	children: PrimaryExpr[];
+	readonly captured_symbols: Token[] = [];
 	readonly return_type = { type: BaseType.VECTOR };
 
 	/** The opening bracket, used for reporting errors. */
 	l_square: Token;
 
-	constructor(children: Expr[], l_paren: Token) {
+	constructor(children: PrimaryExpr[], l_paren: Token) {
 		this.children = children;
 		this.l_square = l_paren;
 	}
@@ -152,12 +151,12 @@ export class FnExpr implements IExpr {
 	params: Token[];
 	params_rest?: Token;
 	body: Expr;
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 
 	l_paren: Token;
 
-	constructor(def: boolean, params: Token[], body: Expr, return_type: ExprType, captured_symbols: Set<string>, l_paren: Token, optionals: { params_rest?: Token, name?: string } = {}) {
+	constructor(def: boolean, params: Token[], body: Expr, return_type: ExprType, captured_symbols: Token[], l_paren: Token, optionals: { params_rest?: Token, name?: string } = {}) {
 		this.def = def;
 		this.name = optionals.name;
 		this.params = params;
@@ -171,7 +170,7 @@ export class FnExpr implements IExpr {
 	toString(): string {
 		const name = this.name === undefined ? '' : ` ${this.name}`;
 		const params = this.params.map(p => p.lexeme).join(' ');
-		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		const captures = this.captured_symbols.length > 0 ? `, captures ${this.captured_symbols.map(s => s.lexeme).join()}` : '';
 		return `(FUNCTION${name}: [${params}] ${this.body.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
@@ -179,13 +178,13 @@ export class FnExpr implements IExpr {
 export class SExpr implements IExpr {
 	op: SymbolExpr | SExpr | FnExpr;
 	children: Expr[];
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 
 	/** The opening parenthesis, used for reporting errors. */
 	l_paren: Token;
 
-	constructor(op: SymbolExpr | SExpr | FnExpr, children: Expr[], captured_symbols: Set<string>, return_type: ExprType, l_paren: Token) {
+	constructor(op: SymbolExpr | SExpr | FnExpr, children: Expr[], captured_symbols: Token[], return_type: ExprType, l_paren: Token) {
 		this.op = op;
 		this.children = children;
 		this.captured_symbols = captured_symbols;
@@ -194,7 +193,7 @@ export class SExpr implements IExpr {
 	}
 
 	toString(): string {
-		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		const captures = this.captured_symbols.length > 0 ? `, captures ${this.captured_symbols.map(s => s.lexeme).join()}` : '';
 		return `(S: ${this.op.toString()} ${this.children.map(c => c.toString()).join(' ')}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
@@ -203,10 +202,10 @@ export class IfExpr implements IExpr {
 	cond: Expr;
 	true_child: Expr;
 	false_child: Expr;
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 
-	constructor(cond: Expr, true_child: Expr, false_child: Expr, captured_symbols: Set<string>, return_type: ExprType) {
+	constructor(cond: Expr, true_child: Expr, false_child: Expr, captured_symbols: Token[], return_type: ExprType) {
 		this.cond = cond;
 		this.true_child = true_child;
 		this.false_child = false_child;
@@ -215,7 +214,7 @@ export class IfExpr implements IExpr {
 	}
 
 	toString(): string {
-		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		const captures = this.captured_symbols.length > 0 ? `, captures ${this.captured_symbols.map(s => s.lexeme).join()}` : '';
 		return `(IF: ${this.cond.toString()} ${this.true_child.toString()} ${this.false_child.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
@@ -223,10 +222,10 @@ export class IfExpr implements IExpr {
 export class LetExpr implements IExpr {
 	bindings: Binding[];
 	body: Expr;
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 
-	constructor(bindings: Binding[], body: Expr, captured_symbols: Set<string>, return_type: ExprType) {
+	constructor(bindings: Binding[], body: Expr, captured_symbols: Token[], return_type: ExprType) {
 		this.bindings = bindings;
 		this.body = body;
 		this.captured_symbols = captured_symbols;
@@ -235,7 +234,7 @@ export class LetExpr implements IExpr {
 
 	toString(): string {
 		const bindings = this.bindings.map(b => `${b.key.lexeme} := ${b.value.toString()}`).join(', ');
-		const captures = this.captured_symbols.size > 0 ? `, captures ${Array.from(this.captured_symbols).join()}` : '';
+		const captures = this.captured_symbols.length > 0 ? `, captures ${this.captured_symbols.map(s => s.lexeme).join()}` : '';
 		return `(LET: [${bindings}] ${this.body.toString()}${captures}, returns type ${logType(this.return_type)})`;
 	}
 }
@@ -243,12 +242,12 @@ export class LetExpr implements IExpr {
 export class LoopExpr implements IExpr {
 	bindings: Binding[];
 	body: Expr;
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type = { type: BaseType.NIL };
 
 	l_paren: Token;
 
-	constructor(bindings: Binding[], body: Expr, captured_symbols: Set<string>, l_paren: Token) {
+	constructor(bindings: Binding[], body: Expr, captured_symbols: Token[], l_paren: Token) {
 		this.bindings = bindings;
 		this.body = body;
 		this.captured_symbols = captured_symbols;
@@ -262,7 +261,7 @@ export class LoopExpr implements IExpr {
 
 export class RecurExpr implements IExpr {
 	loop_vals: Expr[];
-	readonly captured_symbols = new Set<string>();
+	readonly captured_symbols: Token[] = [];
 	return_type = { type: BaseType.NIL };
 
 	l_paren: Token;
@@ -297,11 +296,11 @@ export class RecurExpr implements IExpr {
 
 export class DoExpr implements IExpr {
 	bodies: Expr[];
-	captured_symbols: Set<string>;
+	captured_symbols: Token[];
 	return_type: ExprType;
 	l_paren: Token;
 
-	constructor(bodies: Expr[], captured_symbols: Set<string>, return_type: ExprType, l_paren: Token) {
+	constructor(bodies: Expr[], captured_symbols: Token[], return_type: ExprType, l_paren: Token) {
 		this.bodies = bodies;
 		this.captured_symbols = captured_symbols;
 		this.return_type = return_type;
