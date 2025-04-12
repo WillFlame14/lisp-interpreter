@@ -34,17 +34,20 @@ export type TEnvVar = { type: VarType.LOCAL, index: number } |
 			{ type: VarType.FUNC, label: string };
 
 export class TranslatorEnv extends Environment<TEnvVar> {
+	closure = false;
 	tracker = {
 		[VarType.LOCAL]: 0,
 		[VarType.PARAM]: 0,
 		[VarType.CLOSURE]: 0
 	};
 
-	constructor(enclosing?: TranslatorEnv, copy = false) {
+	constructor(enclosing?: TranslatorEnv, options: { copy?: boolean, closure?: boolean } = {}) {
 		super(enclosing);
 
-		if (copy)
-			this.tracker = enclosing?.tracker ?? this.tracker;
+		this.closure = options.closure ?? enclosing?.closure ?? false;
+
+		if (options.copy)
+			this.tracker = { ...enclosing?.tracker ?? this.tracker };
 	}
 
 	bind(key: string, type: VarType, label?: string) {

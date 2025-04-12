@@ -27,13 +27,13 @@ import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
  */
 
 export enum BaseType {
-	NUMBER = 'NUMBER', STRING = 'STRING', BOOLEAN = 'BOOLEAN', NIL = 'NIL',
+	NUMBER = 'NUM', STRING = 'STR', BOOLEAN = 'BOOL', NIL = 'NIL',
 
-	SYMBOL = 'SYMBOL', LIST = 'LIST', VECTOR = 'VECTOR', ANY = 'ANY'
+	SYMBOL = 'SYM', LIST = 'LIST', VECTOR = 'VECTOR', ANY = 'ANY'
 }
 
 export enum ComplexType {
-	FUNCTION = 'FUNCTION', OBJECT = 'OBJECT', POLY = 'POLY'
+	FUNCTION = 'FN', OBJECT = 'OBJ', POLY = 'POLY'
 }
 
 export function satisfies(type: ExprType, expected: ExprType) {
@@ -155,6 +155,8 @@ export class FnExpr implements IExpr {
 	return_type: ExprType;
 
 	l_paren: Token;
+
+	id = -1;
 
 	constructor(def: boolean, params: Token[], body: Expr, return_type: ExprType, captured_symbols: Token[], l_paren: Token, optionals: { params_rest?: Token, name?: string } = {}) {
 		this.def = def;

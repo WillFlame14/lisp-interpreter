@@ -1,7 +1,6 @@
 import { TEnvVar, TranslatorEnv, VarType } from './environment.ts';
 import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
 import { DoExpr, Expr, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
-import { CompileError } from './checker.ts';
 import { RuntimeError } from './interpreter.ts';
 import { runtimeError } from './main.ts';
 
@@ -146,7 +145,7 @@ class Translator {
 			return;
 		}
 
-		const save_reg_params = Math.min(4, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
+		const save_reg_params = Math.min(4, this.env.tracker[VarType.PARAM] + (this.env.closure ? 1 : 0));
 
 		// Save first 4 register params if needed
 		for (let i = 0; i < save_reg_params; i++)
@@ -181,7 +180,7 @@ class Translator {
 	}
 
 	compile_s(expr: SExpr) {
-		const save_reg_params = Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.tracker[VarType.CLOSURE] > 0 ? 1 : 0));
+		const save_reg_params = Math.min(REGISTER_PARAMS.length - 1, this.env.tracker[VarType.PARAM] + (this.env.closure ? 1 : 0));
 
 		// Save register params if needed
 		for (let i = 0; i < save_reg_params; i++)
@@ -245,14 +244,21 @@ class Translator {
 	compile_let(expr: LetExpr) {
 		const { bindings, body } = expr;
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing, true);
+		const nested = new TranslatorEnv(enclosing, { copy: true });
 
 		this.env = nested;
 
 		for (const { key, value } of bindings) {
 			this.compile_expr(value);
-			this.asm.push('push rax');
-			nested.bind(key.lexeme, VarType.LOCAL);
+
+			if (value instanceof FnExpr) {
+				const label_fn = value.name === undefined ? `anon${value.id}` : `named${value.id}_${sanitize(value.name)}`;
+				nested.bind(key.lexeme, VarType.FUNC, `${label_fn}_closure`);
+			}
+			else {
+				this.asm.push('push rax');
+				nested.bind(key.lexeme, VarType.LOCAL);
+			}
 		}
 
 		try {
@@ -268,15 +274,19 @@ class Translator {
 		const { def, name, params, body, captured_symbols } = expr;
 
 		const label_after = `after_${this.getId()}`;
-		const label_fn = name === undefined ? `anon${this.getId()}` : `named${this.getId()}_${sanitize(name)}`;
+		const fn_id = this.getId();
+		const label_fn = name === undefined ? `anon${fn_id}` : `named${fn_id}_${sanitize(name)}`;
+		expr.id = fn_id;
 
 		const enclosing = this.env;
-		const nested = new TranslatorEnv(enclosing, true);
+		const nested = new TranslatorEnv(enclosing, { copy: true, closure: true });
 
-		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...Object.keys(enclosing.symbolMap).map(_ => `dq 0`));
+		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...captured_symbols.map(_ => `dq 0`));
 
 		this.asm.push(
-			...Object.values(enclosing.symbolMap).flatMap((symbol, i) => {
+			...captured_symbols.flatMap((sym, i) => {
+				const symbol = enclosing.retrieve(sym);
+
 				if (symbol.type === VarType.FUNC)
 					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
 				else
@@ -288,8 +298,8 @@ class Translator {
 			'mov rbp, rsp');
 
 		// Set up closure vars
-		for (const key of Object.keys(enclosing.symbolMap))
-			nested.bind(key, VarType.CLOSURE);
+		for (const key of captured_symbols)
+			nested.bind(key.lexeme, VarType.CLOSURE);
 
 		for (const token of params)
 			nested.bind(token.lexeme, VarType.PARAM);
@@ -390,7 +400,7 @@ export function compile(program: Expr[]) {
 
 		throw err;
 
-		return '';
+		// return '';
 	}
 
 	return [
