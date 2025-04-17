@@ -10,7 +10,9 @@
 ; pop rbp
 
 extern writeString
+extern __allocate
 extern __exception
+extern __error
 
 global __toBool
 __toBool:
@@ -27,6 +29,14 @@ __toInt:
 global __toClosure
 __toClosure:
 	or rax, 3
+	ret
+
+global __isClosure
+__isClosure:
+	mov rbx, 7
+	and rbx, rax
+	cmp rbx, 3
+	jne __error
 	ret
 
 global __toList
@@ -95,6 +105,31 @@ cmp_true:
 cmp_false:
 	mov rax, dword 0
 	call __toBool
+	ret
+
+; rdi holds size, all elements pushed to stack
+global __make_list
+__make_list:
+	push rbp
+	mov rbp, rsp
+	push rbx
+	mov rbx, rdi
+	mov rcx, dword 0 		; set up initial next ptr to be NULL
+	push rcx
+__make_list_loop:
+	mov rax, 16
+	call __allocate
+	pop rcx					; pop next ptr into rcx
+	mov rdx, [rbp+8*rbx+8]	; retrieve value from stack (param)
+	mov [rax], rdx			; set value
+	mov [rax+8], rcx		; set next pointer
+	push rax				; set up next ptr for next node
+	dec rbx
+	cmp rbx, 0
+	jne __make_list_loop
+	pop rax					; get final ptr
+	pop rbx
+	pop rbp
 	ret
 
 global err_arg_int

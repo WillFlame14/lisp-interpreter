@@ -82,48 +82,48 @@ class Translator {
 		return this.id;
 	}
 
-	compile_literal(expr: LValNumber | LValString | LValBoolean | LValNil) {
+	compile_literal(expr: LValNumber | LValString | LValBoolean | LValNil, register = 'rax') {
 		if (expr instanceof LValNumber) {
-			this.asm.push(`mov rax, ${(expr.value << 3) | INT_MASK}`);
+			this.asm.push(`mov ${register}, ${(expr.value << 3) | INT_MASK}`);
 			return;
 		}
 
 		if (expr instanceof LValBoolean) {
-			this.asm.push(`mov rax, ${((expr.value ? 1 : 0) << 3) | BOOL_MASK}`);
+			this.asm.push(`mov ${register}, ${((expr.value ? 1 : 0) << 3) | BOOL_MASK}`);
 			return;
 		}
 
 		if (expr instanceof LValString) {
 			const string_label = `string${this.getId()}`;
 			this.data.push(`dq ${expr.value.length}`, `${string_label}: dq "${expr.value}"`);
-			this.asm.push(`mov rax, ${string_label}`, `call __toString`);
+			this.asm.push(`mov ${register}, ${string_label}`, `call __toString`);
 			return;
 		}
 
 		if (expr instanceof LValNil) {
-			this.asm.push(`xor rax, rax`);
+			this.asm.push(`xor ${register}, ${register}`);
 			return;
 		}
 
 		throw new Error();
 	}
 
-	compile_symbol(expr: SymbolExpr) {
+	compile_symbol(expr: SymbolExpr, register = 'rax') {
 		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov rax, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
+			this.asm.push(`mov ${register}, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
 			return;
 		}
 
 		const entry = this.env.retrieve(expr.name);
-		this.asm.push(...get_mem('rax', entry));
+		this.asm.push(...get_mem(register, entry));
 	}
 
-	compile_primary(expr: Expr) {
+	compile_primary(expr: Expr, register = 'rax') {
 		if (expr instanceof LValNumber || expr instanceof LValString || expr instanceof LValBoolean || expr instanceof LValNil)
-			this.compile_literal(expr);
+			this.compile_literal(expr, register);
 
 		else if (expr instanceof SymbolExpr)
-			this.compile_symbol(expr);
+			this.compile_symbol(expr, register);
 
 		else if (expr instanceof VectorExpr)
 			this.compile_vector(expr);
@@ -152,24 +152,12 @@ class Translator {
 			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
 
 		// Compute children and push onto stack
-		for (const child of expr.children) {
-			this.compile_primary(child);
+		for (const child of expr.children.toReversed()) {
+			this.compile_primary(child, 'rax');
 			this.asm.push('push rax');
 		}
 
-		for (let i = 0; i < expr.children.length; i++) {
-			this.asm.push(
-				'mov rax, 16',
-				'call __allocate',
-				...(i === 0 ? [] : ['pop rcx']),					// pop 'next' ptr into rcx
-				'pop rbx',
-				'mov [rax], rbx',									// value
-				`mov [rax+8], ${i === 0 ? `dword ${NULL}` : 'rcx'}`,	// next pointer (NULL if tail, otherwise rcx)
-			);
-
-			if (i < expr.children.length - 1)
-				this.asm.push('push rax');											// store 'next' on stack
-		}
+		this.asm.push(`mov rdi, ${expr.children.length}`, 'call __make_list', `add rsp, ${expr.children.length*8}`);
 
 		// Restore register params
 		for (let i = 0; i < save_reg_params; i++)
@@ -195,15 +183,8 @@ class Translator {
 		// Get closure in rax
 		this.compile_expr(expr.op);
 
-		this.asm.push(
-			'mov rbx, 7',
-			'and rbx, rax',
-			'cmp rbx, 3',
-			'jne __error',		// confirm that rax holds a closure
-		);
-
-		// Pass closure as first param
-		this.asm.push(`mov ${REGISTER_PARAMS[0]}, rax`);
+		// Confirm that rax holds a closure, then pass it as first param
+		this.asm.push('call __isClosure', `mov ${REGISTER_PARAMS[0]}, rax`);
 
 		const reg_params = Math.min(REGISTER_PARAMS.length - 1, expr.children.length);
 
@@ -414,8 +395,10 @@ export function compile(program: Expr[]) {
 		'extern __toBool',
 		'extern __toInt',
 		'extern __toClosure',
+		'extern __isClosure',
 		'extern __toList',
 		'extern __toString',
+		'extern __make_list',
 		...Object.values(nativeMap).map(name => `extern __${name}_closure`),
 		'',
 		'global _start',
