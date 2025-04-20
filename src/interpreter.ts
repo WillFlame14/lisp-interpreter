@@ -1,5 +1,5 @@
 import { Environment } from './environment.ts';
-import { BaseType, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
+import { BaseType, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, satisfies, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
 import { runtimeError } from './main.ts';
 import { native_funcs } from './native.ts';
 import { Token } from './token.ts';
@@ -21,7 +21,6 @@ export function truthy(lval: RuntimeVal) {
 export interface Callable {
 	name?: string;
 	macro?: boolean;
-	arity: number;
 	params: ExprType[];
 	params_rest?: ExprType;
 	call: (inner_env: Environment<RuntimeVal>, args: RuntimeVal[], token: Token) => RuntimeVal;
@@ -43,21 +42,34 @@ function interpret_if(env: Environment<RuntimeVal>, expr: IfExpr) {
 }
 
 function interpret_fn(env: Environment<RuntimeVal>, expr: FnExpr) {
-	const { def, name, params, body } = expr;
+	const { def, name, params, params_rest, body } = expr;
+
+	const params_type = params.map(_ => ({ type: BaseType.ANY }));
+	const params_rest_type = params_rest === undefined ? undefined : { type: BaseType.LIST };
+
+	const return_type = {
+		type: ComplexType.FUNCTION as const,
+		params: params_type,
+		params_rest: params_rest_type,
+		return_type: body.return_type
+	};
 
 	const func: Callable = {
-		arity: params.length,
-		params: [],
+		params: params.map(_ => ({ type: BaseType.ANY })),
+		params_rest: params_rest === undefined ? undefined : { type: BaseType.LIST },
 		call: (_inner_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
 			const nested = new Environment(env);
 
-			for (let i = 0; i < args.length; i++) {
+			for (let i = 0; i < params.length; i++) {
 				const param = params[i].lexeme;
 				nested.define(param, args[i]);
 			}
 
+			if (params_rest !== undefined)
+				nested.define(params_rest.lexeme, { type: BaseType.LIST, value: args.slice(params.length) });
+
 			if (name !== undefined)
-				nested.define(name, { type: ComplexType.FUNCTION, value: func, name });
+				nested.define(name, { type: ComplexType.FUNCTION, value: func, params: params_type, params_rest: params_rest_type, return_type, name });
 
 			return interpret_expr(nested, body);
 		},
@@ -65,9 +77,9 @@ function interpret_fn(env: Environment<RuntimeVal>, expr: FnExpr) {
 	};
 
 	if (def)
-		env.define(name!, { type: ComplexType.FUNCTION, value: func, name });
+		env.define(name!, { type: ComplexType.FUNCTION, value: func, params: params_type, params_rest: params_rest_type, return_type, name });
 
-	return { type: ComplexType.FUNCTION, value: func, name } as const;
+	return { type: ComplexType.FUNCTION, value: func, params: params_type, params_rest: params_rest_type, return_type, name } as const;
 }
 
 function interpret_let(env: Environment<RuntimeVal>, expr: LetExpr) {
@@ -102,25 +114,22 @@ function interpret_s(env: Environment<RuntimeVal>, expr: SExpr) {
 	if (func.type !== ComplexType.FUNCTION)
 		throw new RuntimeError(expr.l_paren, `${op.toString()} is not a function.`);
 
-	const { name, arity, params, params_rest } = func.value;
-	const expected_arity = arity === -1 ? children.length : func.value.arity;
+	const { name, params, params_rest } = func.value;
 
-	if (expected_arity !== children.length)
-		throw new RuntimeError(expr.l_paren, `Function ${name !== undefined ? name : '(anon)'} requires ${expected_arity} parameters, got ${children.length}.`);
+	if (params_rest === undefined && params.length !== children.length)
+		throw new RuntimeError(expr.l_paren, `Function ${name !== undefined ? name : '(anon)'} requires ${params.length} parameters, got ${children.length}.`);
 
 	const evaluated_args = children.map(child => interpret_expr(env, child));
 
-	if (params.length > 0) {
-		for (let i = 0; i < evaluated_args.length; i++) {
-			const arg = evaluated_args[i];
-			const expected_type = params[i] ?? params_rest;
+	for (let i = 0; i < params.length; i++) {
+		const arg = evaluated_args[i];
+		const expected_type = params[i];
 
-			if (expected_type.type === BaseType.ANY)
-				continue;
+		if (!satisfies(arg, expected_type))
+			continue;
 
-			if (arg.type !== expected_type.type)
-				throw new RuntimeError(expr.l_paren, `Parameter ${i + 1} to function (${JSON.stringify(evaluated_args[i])}) doesn't match expected type ${expected_type.type}.`);
-		}
+		if (arg.type !== expected_type.type)
+			throw new RuntimeError(expr.l_paren, `Parameter ${i + 1} to function ${name}, ${logRuntimeVal(evaluated_args[i])}, doesn't match expected type ${expected_type.type}.`);
 	}
 
 	const result = func.value.call(env, evaluated_args, expr.l_paren);
@@ -172,8 +181,16 @@ export function interpret_expr(env: Environment<RuntimeVal>, expr: Expr): Runtim
 export function interpret(program: Expr[]): string {
 	const environment = new Environment<RuntimeVal>();
 
-	for (const func of native_funcs)
-		environment.define(func.name, { type: ComplexType.FUNCTION, value: { ...func, toString: () => 'native fn' }, name: func.name });
+	for (const func of native_funcs) {
+		const { name, params, params_rest, return_type } = func;
+		const ret = {
+			type: ComplexType.FUNCTION as const,
+			params,
+			params_rest,
+			return_type
+		};
+		environment.define(name, { type: ComplexType.FUNCTION, value: { ...func, toString: () => 'native fn' }, params, params_rest, return_type: ret, name });
+	}
 
 	try {
 		for (let i = 0; i < program.length - 1; i++)

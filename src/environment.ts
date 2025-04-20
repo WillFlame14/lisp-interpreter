@@ -20,7 +20,7 @@ export class Environment<T> {
 		if (this.enclosing !== undefined)
 			return this.enclosing.retrieve(key);
 
-		throw new RuntimeError(key, `Unable to resolve symbol ${key.lexeme}.`);
+		throw new RuntimeError(key, `Unable to resolve symbol ${key.lexeme}. Symbol map contains ${Object.keys(this.symbolMap)}`);
 	}
 }
 

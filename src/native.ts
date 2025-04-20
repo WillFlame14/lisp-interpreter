@@ -8,51 +8,33 @@ type NativeFunc = Omit<Callable, 'toString'> & { name: string, return_type: Expr
 
 const arithmetic_funcs: NativeFunc[] = [
 	{
-		name: '+',
-		arity: -1,
-		params: [],
-		params_rest: { type: BaseType.NUMBER },
+		name: '__plus',
+		params: [{ type: BaseType.NUMBER }, { type: BaseType.NUMBER }],
 		return_type: { type: BaseType.NUMBER },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
-			let sum = 0;
-			for (const arg of args)
-				sum += (arg as LValNumber).value;
-
-			return new LValNumber(sum);
+			const [a, b] = args as LValNumber[];
+			return new LValNumber(a.value + b.value);
 		}
 	},
 	{
-		name: '-',
-		arity: -1,
-		params: [],
-		params_rest: { type: BaseType.NUMBER },
+		name: '__minus',
+		params: [{ type: BaseType.NUMBER }, { type: BaseType.NUMBER }],
 		return_type: { type: BaseType.NUMBER },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
-			let difference = (args[0] as LValNumber).value;
-
-			for (let i = 1; i < args.length; i++)
-				difference -= (args[i] as LValNumber).value;
-
-			return new LValNumber(difference);
+			const [a, b] = args as LValNumber[];
+			return new LValNumber(b.value - a.value);
 		}
 	},
 	{
-		name: '=',
-		arity: -1,
-		params: [{ type: BaseType.ANY }],
-		params_rest: { type: BaseType.ANY },
+		name: '__eq',
+		params: [{ type: BaseType.ANY }, { type: BaseType.ANY }],
 		return_type: { type: BaseType.BOOLEAN },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
-			let result = true;
-			for (let i = 1; i < args.length; i++)
-				result &&= args[0].type === args[i].type && Bun.deepEquals(args[0].value, args[1].value);
-
-			return new LValBoolean(result);
+			return new LValBoolean(Bun.deepEquals(args[0].value, args[1].value));
 		}
 	},
 	{
 		name: 'mod',
-		arity: 2,
 		params: [{ type: BaseType.NUMBER }, { type: BaseType.NUMBER }],
 		return_type: { type: BaseType.NUMBER },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
@@ -66,7 +48,6 @@ const arithmetic_funcs: NativeFunc[] = [
 const logical_funcs: NativeFunc[] = [
 	{
 		name: 'not',
-		arity: 1,
 		params: [{ type: BaseType.ANY }],
 		return_type: { type: BaseType.BOOLEAN },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
@@ -75,7 +56,6 @@ const logical_funcs: NativeFunc[] = [
 	},
 	{
 		name: 'or',
-		arity: -1,
 		params: [],
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.BOOLEAN },
@@ -93,7 +73,6 @@ const logical_funcs: NativeFunc[] = [
 	},
 	{
 		name: 'and',
-		arity: -1,
 		params: [],
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.BOOLEAN },
@@ -113,8 +92,7 @@ const logical_funcs: NativeFunc[] = [
 
 const io_funcs: NativeFunc[] = [
 	{
-		name: 'print',
-		arity: -1,
+		name: '__print',
 		params: [],
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.NIL },
@@ -128,7 +106,6 @@ const io_funcs: NativeFunc[] = [
 const list_funcs: NativeFunc[] = [
 	{
 		name: 'list',
-		arity: -1,
 		params: [],
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.LIST },
@@ -137,8 +114,7 @@ const list_funcs: NativeFunc[] = [
 		}
 	},
 	{
-		name: 'cons',
-		arity: 2,
+		name: '__cons',
 		params: [{ type: BaseType.ANY }, { type: BaseType.LIST }],
 		return_type: { type: BaseType.LIST },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
@@ -146,8 +122,7 @@ const list_funcs: NativeFunc[] = [
 		}
 	},
 	{
-		name: 'pop',
-		arity: 1,
+		name: '__pop',
 		params: [{ type: BaseType.LIST }],
 		return_type: { type: BaseType.LIST },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[], token: Token) => {
@@ -160,8 +135,7 @@ const list_funcs: NativeFunc[] = [
 		}
 	},
 	{
-		name: 'nth',
-		arity: 2,
+		name: '__nth',
 		params: [{ type: BaseType.LIST }, { type: BaseType.NUMBER }],
 		return_type: { type: BaseType.ANY },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[], token: Token) => {
@@ -175,8 +149,7 @@ const list_funcs: NativeFunc[] = [
 		}
 	},
 	{
-		name: 'count',
-		arity: 1,
+		name: '__count',
 		params: [{ type: BaseType.LIST }],
 		return_type: { type: BaseType.NUMBER },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
@@ -189,7 +162,6 @@ export const native_macros: NativeFunc[] = [
 	{
 		name: 'when',
 		macro: true,
-		arity: 2,
 		params: [{ type: BaseType.ANY }, { type: BaseType.ANY }],
 		params_rest: { type: BaseType.ANY },
 		return_type: { type: BaseType.LIST },

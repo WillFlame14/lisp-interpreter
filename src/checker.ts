@@ -1,5 +1,5 @@
 import { Environment } from './environment.ts';
-import { Binding, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, narrow, PrimaryExpr, satisfies, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
+import { BaseType, Binding, ComplexType, DoExpr, Expr, ExprType, FnExpr, IfExpr, LetExpr, ListExpr, narrow, PrimaryExpr, satisfies, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
 import { compileError } from './main.ts';
 import { native_funcs } from './native.ts';
 import { Token, TokenType } from './token.ts';
@@ -96,9 +96,23 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 	const params = params_expr.value.map(lval => lval.value);
 
 	const nested = new Environment(env);
+	let params_rest: Token | undefined = undefined;
 
 	for (let i = 0; i < params.length; i++) {
 		const param = params[i].lexeme;
+
+		if (param === '&') {
+			if (i !== params.length - 2)
+				throw new CompileError(op.value, 'Variadic functions must have & followed by exactly one symbol.');
+
+			params_rest = params[params.length - 1];
+			const token = { type: TokenType.SYMBOL, literal: undefined, lexeme: params_rest.lexeme, line: -1 };
+			nested.define(params_rest.lexeme, new SymbolExpr(token, [], { type: BaseType.LIST }));
+
+			// Cut these off the parameter list
+			params.splice(params.length - 2, 2);
+			break;
+		}
 		const token = { type: TokenType.SYMBOL, literal: undefined, lexeme: param, line: -1 };
 		nested.define(param, new SymbolExpr(token, [], { type: ComplexType.POLY, sym: Symbol(param), narrowable: true }));
 	}
@@ -106,11 +120,11 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 	if (name !== undefined) {
 		const return_type = {
 			type: ComplexType.FUNCTION as const,
-			arity: params.length,
 			params: params.map(p => nested.retrieve(p).return_type),
+			params_rest: params_rest === undefined ? undefined : { type: BaseType.LIST },
 			return_type: { type: ComplexType.POLY, sym: Symbol(name.value.lexeme), narrowable: true }
 		} as const;
-		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), return_type, [], op.value, { name: name.value.lexeme }));
+		nested.define(name.value.lexeme, new FnExpr(def, params, new LValNil(), return_type, [], op.value, { name: name.value.lexeme, params_rest }));
 	}
 
 	const body = check_val(nested, body_expr);
@@ -120,8 +134,8 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 
 	const return_type = {
 		type: ComplexType.FUNCTION as const,
-		arity: params.length,
 		params: params.map(p => nested.retrieve(p).return_type),
+		params_rest: params_rest === undefined ? undefined : { type: BaseType.LIST },
 		return_type: body.return_type
 	};
 
@@ -134,7 +148,7 @@ function check_fn(env: Environment<Expr>, op: LValSymbol, args: LVal[], def = fa
 			captured_symbols.splice(found, 1);
 	}
 
-	const fn = new FnExpr(def, params, body, return_type, captured_symbols, op.value, { name: name?.value.lexeme });
+	const fn = new FnExpr(def, params, body, return_type, captured_symbols, op.value, { name: name?.value.lexeme, params_rest });
 
 	if (def)
 		env.define(name!.value.lexeme, fn);
@@ -206,22 +220,21 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 
 	if (func_expr.return_type.type === ComplexType.FUNCTION) {
 		const { return_type: func_type } = func_expr;
-		const { arity, params, params_rest } = func_type;
+		const { params, params_rest } = func_type;
 
-		const expected_arity = arity === -1 ? args.length : arity;
-
-		if (expected_arity !== args.length)
-			throw new CompileError(token, `Function requires ${expected_arity} parameters, got ${args.length}.`);
+		if (params_rest === undefined && params.length !== args.length)
+			throw new CompileError(token, `Function requires ${params.length} parameters, got ${args.length}.`);
 
 		const evaluated_args = args.map(arg => check_val(env, arg));
 
-		if (params.length > 0 || params_rest !== undefined) {
-			for (let i = 0; i < evaluated_args.length; i++) {
+		// Check specified param types
+		if (params.length > 0) {
+			for (let i = 0; i < params.length; i++) {
 				const arg = evaluated_args[i];
-				const expected_type = params[i] ?? params_rest;
+				const expected_type = params[i];
 
 				if (!satisfies(arg.return_type, expected_type))
-					throw new CompileError(token, `Parameter ${i + 1} to function (${args[i].toString()}, type ${arg.return_type.type}) doesn't match expected type ${expected_type.type}.`);
+					throw new CompileError(token, `Parameter ${i + 1} to function ${token.lexeme} (${args[i].toString()}, type ${arg.return_type.type}) doesn't match expected type ${expected_type.type}.`);
 
 				if (arg.return_type.type === ComplexType.POLY && arg.return_type.narrowable)
 					Object.assign(arg.return_type, narrow(arg.return_type, expected_type));
@@ -240,7 +253,6 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 		if (func_expr.return_type.narrowable) {
 			Object.assign(func_expr.return_type, {
 				type: ComplexType.FUNCTION,
-				arity: evaluated_args.length,
 				params: evaluated_args.map(a => a.return_type),
 				return_type
 			});
@@ -301,10 +313,9 @@ export function check_val(env: Environment<Expr>, val: LVal): Expr {
 export function static_check(program: LVal[]) {
 	const env = new Environment<Expr>();
 
-	for (const { name, arity, params, params_rest, return_type } of native_funcs) {
+	for (const { name, params, params_rest, return_type } of native_funcs) {
 		const type: ExprType = {
 			type: ComplexType.FUNCTION,
-			arity,
 			params,
 			params_rest,
 			return_type

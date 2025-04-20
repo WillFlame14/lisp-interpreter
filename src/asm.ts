@@ -4,17 +4,7 @@ import { DoExpr, Expr, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, S
 import { RuntimeError } from './interpreter.ts';
 import { runtimeError } from './main.ts';
 
-const nativeMap = {
-	'+': 'plus',
-	'-': 'minus',
-	'=': 'eq',
-	peek: 'peek',
-	pop: 'pop',
-	nth: 'nth',
-	cons: 'cons',
-	count: 'count',
-	print: 'print'
-};
+const nativeFuncs = ['plus', 'minus', 'eq', 'pop', 'nth', 'cons', 'count', 'print'];
 
 const TAG_MASK = 0b111;
 
@@ -61,8 +51,8 @@ function get_mem(register: string, value: TEnvVar) {
 			return [`mov ${register}, [rbp+${8*(value.index + 2 - 6)}]`];
 
 		case VarType.CLOSURE:
-			// Need an extra offset since function is always first var in closure
-			return [`mov rax, rdi`, `call __removeTag`, `mov ${register}, [rax+${8*(value.index + 1)}]`];
+			// Need extra offset since function is always 1st var in closure and arity/varargs is 2nd
+			return [`mov rax, rdi`, `call __removeTag`, `mov ${register}, [rax+${8*(value.index + 2)}]`];
 
 		case VarType.FUNC:
 			// apply closure tag
@@ -109,10 +99,10 @@ class Translator {
 	}
 
 	compile_symbol(expr: SymbolExpr, register = 'rax') {
-		if (expr.name.lexeme in nativeMap) {
-			this.asm.push(`mov ${register}, __${nativeMap[expr.name.lexeme as keyof typeof nativeMap]}_closure`, `call __toClosure`);
-			return;
-		}
+		// if (expr.name.lexeme.startsWith('__')) {
+		// 	this.asm.push(`mov ${register}, ${expr.name.lexeme}_closure`, `call __toClosure`);
+		// 	return;
+		// }
 
 		const entry = this.env.retrieve(expr.name);
 		this.asm.push(...get_mem(register, entry));
@@ -152,12 +142,12 @@ class Translator {
 			this.asm.push(`push ${REGISTER_PARAMS[i]}`);
 
 		// Compute children and push onto stack
-		for (const child of expr.children.toReversed()) {
+		for (const child of expr.children) {
 			this.compile_primary(child, 'rax');
 			this.asm.push('push rax');
 		}
 
-		this.asm.push(`mov rdi, ${expr.children.length}`, 'call __make_list', `add rsp, ${expr.children.length*8}`);
+		this.asm.push(`mov rdi, ${expr.children.length}`, `mov rsi, rsp`,'call __make_list', `add rsp, ${expr.children.length*8}`);
 
 		// Restore register params
 		for (let i = 0; i < save_reg_params; i++)
@@ -183,22 +173,13 @@ class Translator {
 		// Get closure in rax
 		this.compile_expr(expr.op);
 
-		// Confirm that rax holds a closure, then pass it as first param
-		this.asm.push('call __isClosure', `mov ${REGISTER_PARAMS[0]}, rax`);
-
-		const reg_params = Math.min(REGISTER_PARAMS.length - 1, expr.children.length);
-
-		// Pop remaining arguments into the param registers (leave rest on stack)
-		for (let i = 0; i < reg_params; i++)
-			this.asm.push(`pop ${REGISTER_PARAMS[reg_params - i]}`);
-
-		// Call function
-		this.asm.push('call __removeTag', 'call [rax]');
-
-		const stack_params = expr.children.length - (REGISTER_PARAMS.length - 1);
-
-		if (stack_params > 0)
-			this.asm.push(`add rsp, ${stack_params * 8}`);
+		this.asm.push(
+			'call __isClosure',
+			'call __removeTag',
+			`mov ${REGISTER_PARAMS[0]}, rax`,		// Pass closure in rdi
+			`mov rax, ${expr.children.length}`,		// Pass # of params in rax
+			`call __lisp_call`,
+		);
 
 		// Restore register params
 		for (let i = 0; i < save_reg_params; i++)
@@ -251,8 +232,17 @@ class Translator {
 		}
 	}
 
+	/**
+	 * Compiles a user-defined function.
+	 * 
+	 * Defines the function body directly in the instructions, and creates a function object in .data:
+	 * function_ptr | 8B
+	 * arity		| 4B
+	 * varargs		| 4B
+	 * closure_args | ...
+	 */
 	compile_fn(expr: FnExpr) {
-		const { def, name, params, body, captured_symbols } = expr;
+		const { def, name, params, params_rest, body, captured_symbols } = expr;
 
 		const label_after = `after_${this.getId()}`;
 		const fn_id = this.getId();
@@ -262,16 +252,21 @@ class Translator {
 		const enclosing = this.env;
 		const nested = new TranslatorEnv(enclosing, { copy: true, closure: true });
 
-		this.data.push(`${label_fn}_closure:`, `dq ${label_fn}`, ...captured_symbols.map(_ => `dq 0`));
+		this.data.push(`${label_fn}_closure:`,
+			`dq ${label_fn}`,
+			`dd ${params.length}`,
+			`dd ${params_rest === undefined ? 0 : 1}`,
+			...captured_symbols.map(_ => `dq 0`)
+		);
 
 		this.asm.push(
 			...captured_symbols.flatMap((sym, i) => {
 				const symbol = enclosing.retrieve(sym);
 
 				if (symbol.type === VarType.FUNC)
-					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+					return [`mov rax, ${symbol.label}`, `call __toClosure`, `mov [${label_fn}_closure+${8*(i+2)}], rax`];
 				else
-					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+1)}], rax`];
+					return [`mov rax, ${format_mem('rbp', symbol.index)}`, `mov [${label_fn}_closure+${8*(i+2)}], rax`];
 			}),
 			`jmp ${label_after}`,
 			`${label_fn}:`,
@@ -284,6 +279,9 @@ class Translator {
 
 		for (const token of params)
 			nested.bind(token.lexeme, VarType.PARAM);
+
+		if (params_rest !== undefined)
+			nested.bind(params_rest.lexeme, VarType.PARAM);
 
 		// Allow recursion
 		if (name !== undefined)
@@ -298,10 +296,11 @@ class Translator {
 			this.asm.push(
 				'pop rbp',
 				'ret',
-				`${label_after}:`,
-				`mov rax, ${label_fn}_closure`,
-				`call __toClosure`
+				`${label_after}:`
 			);
+
+			if (!def)
+				this.asm.push(`mov rax, ${label_fn}_closure`, `call __toClosure`);
 		}
 		finally {
 			this.env = enclosing;
@@ -371,6 +370,9 @@ function indent(s: string) {
 export function compile(program: Expr[]) {
 	const translator = new Translator();
 
+	for (const func of nativeFuncs)
+		translator.env.bind(`__${func}`, VarType.FUNC, `__${func}_closure`);
+
 	try {
 		for (const expr of program)
 			translator.compile_expr(expr);
@@ -399,7 +401,8 @@ export function compile(program: Expr[]) {
 		'extern __toList',
 		'extern __toString',
 		'extern __make_list',
-		...Object.values(nativeMap).map(name => `extern __${name}_closure`),
+		'extern __lisp_call',
+		...nativeFuncs.map(name => `extern __${name}_closure`),
 		'',
 		'global _start',
 		'_start:',

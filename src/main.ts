@@ -49,6 +49,7 @@ function prompt() {
 
 export function run(source: string) {
 	const tokens = scanTokens(source);
+	// const tokens = scanTokens(stdlib + '\n' + source);
 	const program = parse(tokens);
 
 	if (hadError) {
@@ -59,10 +60,10 @@ export function run(source: string) {
 	// console.log(program.map(expr => expr.accept(astPrinter)).join('\n'));
 
 	const expanded = macroexpand(program);
-	console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
+	// console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
 
 	const exprs = static_check(expanded);
-	console.log(`static checked:\n${exprs.map(e => e.toString()).join('\n')}`);
+	// console.log(`static checked:\n${exprs.map(e => e.toString()).join('\n')}`);
 
 	// return interpret(exprs);
 	fs.writeFileSync('output/out.s', compile(exprs));

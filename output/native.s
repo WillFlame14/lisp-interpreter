@@ -61,8 +61,8 @@ __minus:
 
 __eq:
 	mov rax, rsi
-	mov rbx, rdx
-	cmp rax, rbx
+	mov rcx, rdx
+	cmp rax, rcx
 	sete al
 	movzx rax, al
 	call __toBool
@@ -87,23 +87,18 @@ __cons:
 	call __toList
 	ret
 
-__peek:
-	shr rsi, 3 			; remove list tag
-	mov rax, [rsi]
-	ret
-
 __pop:
 	shr rsi, 3 			; remove list tag
 	cmp rsi, 0
-	je pop_empty
+	je .pop_empty
 	mov rax, rsi
-	mov rbx, [rsi+8]	; new head
-	push rbx
+	mov rcx, [rsi+8]	; new head
+	push rcx
 	call __deallocate	; dealloc head
 	pop rax
 	call __toList
 	ret
-pop_empty:
+.pop_empty:
 	mov rsi, pop_empty_msg
 	mov rdx, 20
 	call writeString
@@ -112,22 +107,22 @@ pop_empty:
 __nth:
 	shr rsi, 3 		; remove list tag
 	cmp rsi, 0
-	je nth_oob
+	je .nth_oob
 	mov rax, rsi	; head (curr)
-	mov rbx, rdx	; i
-	shr rbx, 3		; remove ptr tag
-nth_loop:
-	cmp rbx, 0
-	je nth_peek
+	mov rcx, rdx	; i
+	shr rcx, 3		; remove ptr tag
+.nth_loop:
+	cmp rcx, 0
+	je .nth_peek
 	cmp rax, 0
-	je nth_oob
-	sub rbx, 1
+	je .nth_oob
+	sub rcx, 1
 	mov rax, [rax+8]
-	jmp nth_loop
-nth_peek:
+	jmp .nth_loop
+.nth_peek:
 	mov rax, [rax]
 	ret
-nth_oob:
+.nth_oob:
 	mov rsi, nth_oob_msg
 	mov rdx, 24
 	call writeString
@@ -135,15 +130,15 @@ nth_oob:
 
 __count:
 	shr rsi, 3  	; remove list tag
-	mov rbx, rsi	; head (curr)
+	mov rcx, rsi	; head (curr)
 	mov rax, 0 		; counter
-count_loop:
-	cmp rbx, 0
-	je counted
-	mov rbx, [rbx+8]
+.count_loop:
+	cmp rcx, 0
+	je .counted
+	mov rcx, [rcx+8]
 	inc rax
-	jmp count_loop
-counted:
+	jmp .count_loop
+.counted:
 	call __toInt
 	ret
 
@@ -171,42 +166,42 @@ __print:
 	mov rax, 7
 	and rax, rsi
 	cmp rax, 0
-	je print_nil
+	je .print_nil
 	cmp rax, 1
-	je print_bool
+	je .print_bool
 	cmp rax, 2
-	je print_int
+	je .print_int
 	cmp rax, 3
-	je print_fn
+	je .print_fn
 	cmp rax, 4
-	je print_list
+	je .print_list
 	cmp rax, 5
-	je print_string
-print_nil:
+	je .print_string
+.print_nil:
 	mov rsi, nil_msg
 	mov rdx, 3
 	call writeString
-	jmp print_end
-print_bool:
+	jmp .print_end
+.print_bool:
 	shr rsi, 3
 	cmp rsi, 0
-	je print_false
+	je .print_false
 	mov rsi, true_msg
 	mov rdx, 4
 	call writeString
-	jmp print_end
-print_false:
+	jmp .print_end
+.print_false:
 	mov rsi, false_msg
 	mov rdx, 5
 	call writeString
-	jmp print_end
-print_int:
+	jmp .print_end
+.print_int:
 	shr rsi, 3
 	mov rax, rsi
 	push r12
 	push r13
 	mov r12, 0
-get_digit:
+.get_digit:
 	mov rdi, rax
 	call mod10
 	push rax
@@ -215,10 +210,10 @@ get_digit:
 	mov rsi, rax
 	add r12, 1
 	cmp rsi, 0
-	jne get_digit
+	jne .get_digit
 	mov r13, r12
 	mov rdx, 1
-print_digit:
+.print_digit:
 	pop rax
 	add rax, 48
 	mov [char], al	; shift into ascii
@@ -226,16 +221,16 @@ print_digit:
 	call writeString
 	sub r13, 1
 	cmp r13, 0
-	jne print_digit
+	jne .print_digit
 	pop r13
 	pop r12
-	jmp print_end
-print_fn:
+	jmp .print_end
+.print_fn:
 	mov rsi, fn_msg
 	mov rdx, 10
 	call writeString
-	jmp print_end
-print_list:
+	jmp .print_end
+.print_list:
 	push r12
 	mov r12, rsi 	; store curr in call-preserved r12
 	shr r12, 3 		; remove list tag
@@ -244,13 +239,13 @@ print_list:
 	mov rdx, 1
 	call writeString
 	cmp r12, 0
-	je list_end	; check for empty list
+	je .list_end	; check for empty list
 	mov rsi, [r12]
 	call __print
 	mov r12, [r12+8]
 	cmp r12, 0
-	je list_end	; print first element
-print_link:
+	je .list_end	; print first element
+.print_link:
 	mov [char], word ' '
 	mov rsi, char
 	mov rdx, 1
@@ -259,21 +254,21 @@ print_link:
 	call __print
 	mov r12, [r12+8]
 	cmp r12, 0
-	jne print_link
-list_end:
+	jne .print_link
+.list_end:
 	mov [char], word ')'
 	mov rsi, char
 	mov rdx, 1
 	call writeString
 	pop r12
-	jmp print_end
-print_string:
+	jmp .print_end
+.print_string:
 	shr rsi, 3
 	shl rsi, 3
 	mov rdx, [rsi-8]
 	call writeString
-	jmp print_end
-print_end:
+	jmp .print_end
+.print_end:
 	mov rax, 0
 	ret
 
@@ -335,7 +330,6 @@ global __plus_closure
 global __minus_closure
 global __eq_closure
 global __cons_closure
-global __peek_closure
 global __pop_closure
 global __nth_closure
 global __count_closure
@@ -344,6 +338,7 @@ global __print_closure
 section .data
 	char: dd 0
 
+section .rodata
 	nil_msg: dw "nil"
 	true_msg: dw "true"
 	false_msg: dw "false"
@@ -353,12 +348,43 @@ section .data
 	nth_oob_msg: dw "nth index out of bounds!"
 
 	ALIGN 8
-	__plus_closure: dq __plus
-	__minus_closure: dq __minus
-	__eq_closure: dq __eq
-	__cons_closure: dq __cons
-	__peek_closure: dq __peek
-	__pop_closure: dq __pop
-	__nth_closure: dq __nth
-	__count_closure: dq __count
-	__print_closure: dq __print
+	__plus_closure:
+		dq __plus
+		dd 2
+		dd 0
+
+	__minus_closure:
+		dq __minus
+		dd 2
+		dd 0
+
+	__eq_closure:
+		dq __eq
+		dd 2
+		dd 0
+
+	__cons_closure:
+		dq __cons
+		dd 2
+		dd 0
+
+	__pop_closure:
+		dq __pop
+		dd 1
+		dd 0
+
+	__nth_closure:
+		dq __nth
+		dd 2
+		dd 0
+
+	__count_closure:
+		dq __count
+		dd 1
+		dd 0
+
+	__print_closure:
+		dq __print
+		dd 1
+		dd 0
+

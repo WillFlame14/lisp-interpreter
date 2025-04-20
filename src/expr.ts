@@ -56,7 +56,6 @@ export function narrow(type: ExprType, constraint: ExprType) {
 export type ExprType = { type: BaseType } |
 	{
 		type: ComplexType.FUNCTION,
-		arity: number,
 		params: ExprType[],
 		params_rest?: ExprType,
 		return_type: ExprType
@@ -110,14 +109,14 @@ export class SymbolExpr implements IExpr {
 }
 
 export class ListExpr implements IExpr {
-	children: PrimaryExpr[];
+	children: Expr[];
 	readonly captured_symbols: Token[] = [];
 	readonly return_type = { type: BaseType.LIST };
 
 	/** The opening parenthesis, used for reporting errors. */
 	l_paren: Token;
 
-	constructor(children: PrimaryExpr[], l_paren: Token) {
+	constructor(children: Expr[], l_paren: Token) {
 		this.children = children;
 		this.l_paren = l_paren;
 	}

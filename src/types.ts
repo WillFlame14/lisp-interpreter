@@ -1,5 +1,5 @@
 import { Token } from './token.ts';
-import { BaseType, ComplexType, IExpr, } from './expr.ts';
+import { BaseType, ComplexType, ExprType, IExpr, } from './expr.ts';
 import { Callable } from './interpreter.ts';
 
 export type LVal = LValNumber | LValString | LValBoolean | LValNil | LValSymbol | LValList | LValVector;
@@ -167,5 +167,8 @@ export type RuntimeVector = {
 export type RuntimeFunction = {
 	type: ComplexType.FUNCTION,
 	name?: string,
+	params: ExprType[],
+	params_rest?: ExprType,
+	return_type: ExprType
 	value: Callable
 };

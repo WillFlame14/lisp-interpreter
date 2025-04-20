@@ -1,7 +1,7 @@
-import { static_check } from './checker.ts';
+import { CompileError, static_check } from './checker.ts';
 import { Environment } from './environment.ts';
 import { BaseType, ComplexType } from './expr.ts';
-import { Callable, interpret_expr, RuntimeError } from './interpreter.ts';
+import { Callable, interpret_expr } from './interpreter.ts';
 import { native_funcs, native_macros } from './native.ts';
 import { Token } from './token.ts';
 import { LVal, LValBoolean, LValList, LValNil, LValNumber, LValString, LValSymbol, LValVector, RuntimeFunction, RuntimeVal } from './types.ts';
@@ -41,37 +41,62 @@ function expandMacro(env: Environment<RuntimeVal>, expr: LVal): LVal {
 				const args = expr.value.slice(1);
 
 				if (args.length !== 3)
-					throw new RuntimeError(op.value, `Wrong number of args (${args.length}) passed to ${op.value.lexeme}.`);
+					throw new CompileError(op.value, `Wrong number of args (${args.length}) passed to ${op.value.lexeme}.`);
 
-				const [symbol, params, body] = args;
+				const [symbol, params_v, body] = args;
 				if (!(symbol instanceof LValSymbol))
-					throw new RuntimeError(op.value, 'Expected a symbol as the first argument to defmacro.');
+					throw new CompileError(op.value, 'Expected a symbol as the first argument to defmacro.');
 
-				if (!(params instanceof LValVector))
-					throw new RuntimeError(op.value, 'Expected a vector of parameters as the second argument to defmacro.');
+				if (!(params_v instanceof LValVector) || !params_v.value.every(param => param instanceof LValSymbol))
+					throw new CompileError(op.value, 'Expected a vector of parameters as the second argument to defmacro.');
+
+				let params_rest: Token | undefined = undefined;
+
+				const rest_index = params_v.value.findIndex(p => p.value.lexeme === '&');
+				if (rest_index !== -1) {
+					if (rest_index !== params_v.value.length - 2)
+						throw new CompileError(op.value, 'Variadic functions must have & followed by exactly one symbol.');
+
+					params_rest = params_v.value.at(-1)!.value;
+
+					// Cut these off the parameter list
+					params_v.value.splice(params_v.value.length - 2, 2);
+				}
 
 				const macro_name = symbol.value.lexeme;
+				const params_type = params_v.value.map(_ => ({ type: BaseType.ANY }));
+				const params_rest_type = params_rest === undefined ? undefined : { type: BaseType.LIST };
+
+				const return_type = {
+					type: ComplexType.FUNCTION as const,
+					params: params_type,
+					params_rest: params_rest_type,
+					return_type: { type: BaseType.ANY }
+				};
 
 				const macro: Callable = {
 					macro: true,
-					arity: params.value.length,
-					params: [],
+					params: params_type,
+					params_rest: params_rest_type,
 					call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
 						const nested = new Environment(env);
 
-						for (let i = 0; i < args.length; i++) {
-							const param = (params.value[i] as LValSymbol).value.lexeme;
+						for (let i = 0; i < params_v.value.length; i++) {
+							const param = (params_v.value[i] as LValSymbol).value.lexeme;
 							nested.define(param, args[i]);
 						}
 
-						env.define(macro_name, { type: ComplexType.FUNCTION, value: macro, name: macro_name });
+						if (params_rest !== undefined)
+							nested.define(params_rest.lexeme, { type: BaseType.LIST, value: args.slice(params_v.value.length) });
+
+						env.define(macro_name, { type: ComplexType.FUNCTION, value: macro, params: params_type, params_rest: params_rest_type, return_type, name: macro_name });
 						const expr = static_check([body])[0];
 
 						return interpret_expr(nested, expr);
 					},
 					toString: body.toString,
 				};
-				env.define(macro_name, { type: ComplexType.FUNCTION, value: macro, name: macro_name });
+				env.define(macro_name, { type: ComplexType.FUNCTION, value: macro, params: params_type, params_rest: params_rest_type, return_type, name: macro_name });
 				return new LValNil();
 			}
 
@@ -95,11 +120,27 @@ function expandMacro(env: Environment<RuntimeVal>, expr: LVal): LVal {
 export function macroexpand(program: LVal[]) {
 	const env = new Environment<RuntimeVal>();
 
-	for (const func of native_funcs)
-		env.define(func.name, { type: ComplexType.FUNCTION, value: { ...func, toString: () => '<native fn>' }, name: func.name });
+	for (const func of native_funcs) {
+		const { name, params, params_rest, return_type } = func;
+		const ret = {
+			type: ComplexType.FUNCTION as const,
+			params,
+			params_rest,
+			return_type
+		};
+		env.define(name, { type: ComplexType.FUNCTION, value: { ...func, toString: () => '<native fn>' }, params, params_rest, return_type: ret, name });
+	}
 
-	for (const macro of native_macros)
-		env.define(macro.name,{ type: ComplexType.FUNCTION, value: { ...macro, toString: () => '<native macro>' }, name: macro.name });
+	for (const macro of native_macros) {
+		const { name, params, params_rest, return_type } = macro;
+		const ret = {
+			type: ComplexType.FUNCTION as const,
+			params,
+			params_rest,
+			return_type
+		};
+		env.define(name,{ type: ComplexType.FUNCTION, value: { ...macro, toString: () => '<native macro>' }, params, params_rest, return_type: ret, name });
+	}
 
 	return program.map(expr => expandMacro(env, expr));
 }
