@@ -136,13 +136,14 @@ __make_list_loop:
 	pop r12
 	pop rbx
 	pop rbp
+	call __toList
 	ret
 
-; rax holds # of args, rdi holds func closure
+; rdi holds func closure
 ; stack:
 ; <saved rbx> (added in first line)
 ; <lisp_call return address>
-; <saved # of params to pop off later>
+; <# of args>
 ; <original caller return address>
 ; <argN>
 ; ...
@@ -151,6 +152,7 @@ set_args:
 	push rbx				; store size of new stack in call-preserved rbx
 	mov rbx, 0
 	mov r10, 0				; counter
+	mov rax, [rsp+16]		; put # of args into rax
 	cmp rax, 5
 	jl .reg_params
 	sub rax, 5
@@ -205,10 +207,10 @@ __lisp_call:
 	cmp rdx, 0				; varargs?
 	jz .fixed
 	sub rax, rcx			; # params passed - arity = # of varargs
+	lea rsi, [rsp+8]		; load start of args
 	push rcx				; save arity
 	push rdi				; save closure address
 	push rax				; save # of varargs
-	lea rsi, [rsp+8]		; load start of args
 	mov rdi, rax
 	call __make_list
 	pop r10					; restore # of varargs in r10
