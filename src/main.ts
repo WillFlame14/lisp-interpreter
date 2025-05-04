@@ -8,6 +8,8 @@ import { interpret, RuntimeError } from './interpreter.ts';
 import { compile } from './asm.ts';
 import { macroexpand } from './reader.ts';
 import { CompileError, static_check } from './checker.ts';
+import { lower, lower_expr } from './lower.ts';
+import { optimize_intermediates } from './optimize.ts';
 
 let hadError = false, hadCompileError = false, hadRuntimeError = false;
 const stdlib = fs.readFileSync('src/stdlib.clj', 'utf8');
@@ -63,19 +65,23 @@ export function run(source: string) {
 	// console.log(`expanded:\n${expanded.map(expr => expr.toString()).join('\n')}`);
 
 	const exprs = static_check(expanded);
+
+	const ir = lower(exprs);
+	console.log('canonical:\n-----------', ir.map(i => i.toString()).join('\n\n'), '-------');
+	return optimize_intermediates(ir).map(i => i.toString()).join('\n\n');
 	// console.log(`static checked:\n${exprs.map(e => e.toString()).join('\n')}`);
 
 	// return interpret(exprs);
-	fs.writeFileSync('output/out.s', compile(exprs));
+	// fs.writeFileSync('output/out.s', compile(exprs));
 
-	try {
-		const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
-		return proc.stdout.toString();
-	}
-	catch (err) {
-		console.log(err);
-		return;
-	}
+	// try {
+	// 	const proc = Bun.spawnSync({ cmd: ['./assemble.sh'] });
+	// 	return proc.stdout.toString();
+	// }
+	// catch (err) {
+	// 	console.log(err);
+	// 	return;
+	// }
 }
 
 export function error(line: number, message: string) {

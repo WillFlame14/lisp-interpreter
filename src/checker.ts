@@ -241,7 +241,7 @@ function check_s(env: Environment<Expr>, op: LValSymbol | LValList, args: LVal[]
 			}
 		}
 
-		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, [], func_type.return_type) : func_expr;
+		const s_op = op instanceof LValSymbol ? new SymbolExpr(op.value, [], func_type) : func_expr;
 		const captured_symbols = evaluated_args.reduce<Token[]>((a, c) => a.concat(c.captured_symbols.filter(s => !a.some(as => as.lexeme === s.lexeme))), []);
 
 		return new SExpr(s_op, evaluated_args, captured_symbols, func_type.return_type, token);

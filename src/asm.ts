@@ -1,6 +1,6 @@
 import { TEnvVar, TranslatorEnv, VarType } from './environment.ts';
 import { LValBoolean, LValNil, LValNumber, LValString } from './types.ts';
-import { DoExpr, Expr, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
+import { ComplexType, DoExpr, Expr, FnExpr, IfExpr, LetExpr, ListExpr, LoopExpr, RecurExpr, SExpr, SymbolExpr, VectorExpr } from './expr.ts';
 import { RuntimeError } from './interpreter.ts';
 import { runtimeError } from './main.ts';
 
@@ -173,6 +173,39 @@ class Translator {
 		// Get closure in rax
 		this.compile_expr(expr.op);
 
+		console.log('compiling s', expr.op);
+
+		if (expr.op instanceof SymbolExpr && expr.op.return_type.type === ComplexType.FUNCTION) {
+			const func = expr.op.return_type;
+
+			// Known not variadic
+			if (func.params_rest === undefined) {
+				// Confirm that rax holds a closure, then pass it as first param
+				this.asm.push('call __isClosure', `mov ${REGISTER_PARAMS[0]}, rax`);
+
+				const reg_params = Math.min(REGISTER_PARAMS.length - 1, expr.children.length);
+
+				// Pop remaining arguments into the param registers (leave rest on stack)
+				for (let i = 0; i < reg_params; i++)
+					this.asm.push(`pop ${REGISTER_PARAMS[reg_params - i]}`);
+
+				// Call function
+				this.asm.push('call __removeTag', 'call [rax]');
+
+				const stack_params = expr.children.length - (REGISTER_PARAMS.length - 1);
+
+				if (stack_params > 0)
+					this.asm.push(`add rsp, ${stack_params * 8}`);
+
+				// Restore register params
+				for (let i = 0; i < save_reg_params; i++)
+					this.asm.push(`pop ${REGISTER_PARAMS[save_reg_params - i - 1]}`);
+
+				return;
+			}
+		}
+
+		// Variadic stub
 		this.asm.push(
 			'call __isClosure',
 			'call __removeTag',

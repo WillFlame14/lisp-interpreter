@@ -93,8 +93,7 @@ const logical_funcs: NativeFunc[] = [
 const io_funcs: NativeFunc[] = [
 	{
 		name: '__print',
-		params: [],
-		params_rest: { type: BaseType.ANY },
+		params: [{ type: BaseType.ANY }],
 		return_type: { type: BaseType.NIL },
 		call: (_env: Environment<RuntimeVal>, args: RuntimeVal[]) => {
 			console.log(args.map(logRuntimeVal));

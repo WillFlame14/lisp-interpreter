@@ -1,3 +1,3 @@
 (let [add4 (fn [] (let [x 4]
-                    (fn [y] (+ x y))))]
-  (print ((add4) 3)))
+                    (fn [y] (__plus x y))))]
+  (__print ((add4) 3)))
